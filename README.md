@@ -19,6 +19,7 @@ get_data_microbiome_qiime2.Rmd
 #### PCA and K-means clustering for Bile Acids
 ``` js
 get_analysis_ba_PCA.Rmd
+[a link](https://github.com/argossy/mbml_public/blob/main/Scripts/get_analysis_ba_PCA.Rmd)
 ```
 
 #### Association analysis among Tryptophan related pathway and microbiomes/metabolites
