@@ -1,0 +1,565 @@
+---
+title: "get_plot_microbiome"
+author: "Wanting Jin"
+date: "9/2/2020"
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=3*3, fig.height=3*3}
+### get data for microbiome, Bile Acids, Tryptophan and Mood
+dir1 = 'E:/Github/mbml/Scripts'
+dir2 = 'E:/Wanting/mbml'
+setwd(dir1)
+
+library(knitr)
+library(ggplot2)
+library(reshape2)
+library(lme4)
+source('data_analysis_MBML.R')
+library(tidyr)  
+library(stringr)
+library(dplyr)
+library(lmerTest)
+library(magrittr)
+library(qwraps2)
+library(rstatix)
+library(ggpubr)
+
+#dir_beha = 'behaviordata'
+dir_mb = '../processed_data'
+dir_raw = '../raw_data'
+dir_cvrt = sprintf('%s/cvrt',dir_raw)
+dir_out = sprintf('%s/results/',dir2)
+
+filein_trp = sprintf('%s/mbml_trp1.csv',dir_mb)
+dat_trp = read.csv(filein_trp)
+
+filein_ba = sprintf('%s/imputed_bilacid_log.csv',dir_mb)
+dat_ba = read.csv(filein_ba)
+
+setwd(dir2)
+filein_mood = './Data/processed_data/MPPD_Data_Master_09-13-2020.csv'
+dat_mood = read.csv(filein_mood)
+
+edataNames_BA = c('TaMCA','THCA','GHCA','TUDCA'
+               ,'GUDCA','TCA','GCA'
+               ,'CA','UDCA','TCDCA','GCDCA','TDCA'
+               ,'GDCA','CDCA','DCA','GLCA','bMCA')
+edataNames_Trp = c('Tryptophan','Kynurenine','Kynurenic.Acid','Neopterin','Serotonin', 'KYN_TRP_Ratio', 'KA_KYN_Ratio')
+edataNames_div = c(paste("wunifrac.PC.",1:4,sep='')
+                  ,"pielou_e","observed_otus","faith_pd","shannon")
+
+```
+
+##Spaghetti plot of GAD7 and EPDS scores by visits grouped by psychitric history
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=3*3, fig.height=3*3}
+dat_GAD = dat_mood[1:30,c(1,21,48,50,52)]
+dat_EPDS = dat_mood[1:30,c(1,21,54,57,60)]
+colnames(dat_GAD)= c('Subject','Group','V1','V2','V3')
+colnames(dat_EPDS)= c('Subject','Group','V1','V2','V3')
+
+
+mx_GAD = melt(dat_GAD,measure.vars=c('V1','V2','V3'),id = c('Subject','Group'),variable.name = 'Visit',value.name = 'GAD7')
+mx_EPDS = melt(dat_EPDS,measure.vars=c('V1','V2','V3'),id = c('Subject','Group'),variable.name = 'Visit',value.name = 'EPDS')
+mx_mood = merge(mx_GAD,mx_EPDS,by = c('Subject','Group','Visit'))
+mx_mood$nVisit = as.numeric(substring(mx_mood$Visit,2,2))
+mx_mood$EPDS = as.numeric(mx_mood$EPDS)
+mx_mood$GAD7 = as.numeric(mx_mood$GAD7)
+mx_mood$Subject = substring(mx_mood$Subject,5,6)
+
+his_labs = c("Anx(n = 7)","AnxorMDD(n = 9)","MDD(n = 4)","None(n = 10)")
+names(his_labs) = c("Anx","AnxorMDD","MDD","None")
+
+for(edataName in c('GAD7','EPDS')){
+    p = ggplot(mx_mood)+
+    facet_grid(.~Group)+
+    geom_line(aes(nVisit,get(edataName),color = Subject))+
+    scale_x_continuous(breaks = seq(1,3,1))+
+    xlab("Visit")+
+    ylab('scores')+
+    ggtitle(edataName)+
+    theme_classic()
+    #ggsave(sprintf('%s/Report/plots/Figure2&3b trajectory/%s_goup_spaghetti.png',dir2,edataName),width = 6,height = 4)
+    print(p)
+}
+
+for(edataName in c('GAD7','EPDS')){
+    p = ggplot(mx_mood)+
+    geom_line(aes(nVisit,get(edataName),fill = Subject,color = Group))+
+    scale_x_continuous(breaks = seq(1,3,1))+
+    xlab("Visit")+
+    ylab('scores')+
+    ggtitle(edataName)+
+    theme_classic()
+    #ggsave(sprintf('%s/Report/plots/Figure2&3b trajectory/%s_spaghetti.png',dir2,edataName),width = 6,height = 4)
+    print(p)
+}
+
+
+
+```
+
+## Boxplot of Tryptophan related pathway by visits
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=12, fig.height=6}
+
+
+dat_trp1 = dat_trp[,c(1:2,44,46:51)]
+mx_trp = melt(dat_trp1,measure.vars = edataNames_Trp,id = c("Subject","Visit"),variable.name = "Trp")
+
+##calculate the repeated anova test among Visits
+
+anovap = matrix(NA,7,1)
+for(i in 1:length(edataNames_Trp)){
+  anovap[i] <- anova_test(data = mx_trp[mx_trp$Trp==edataNames_Trp[i],],dv = value, wid = Subject,within = Visit)$ANOVA$p
+}
+
+
+#Boxplot of Tryptophan related pathway by visits with group comparison results
+my_comparisons = list(c("V1","V2"),c("V2","V3"),c("V1","V3"))
+
+rm.subject = c("16","22","28") #remove subjects lost to follow up
+mx_trp1 = mx_trp[!mx_trp$Subject %in% rm.subject,]
+
+ggboxplot(mx_trp1,x = "Visit", y = "value",fill = "Visit",outlier.shape = NA)+
+  facet_wrap(~Trp, scales ="free_y",nrow = 1)+
+  geom_point(aes(Visit,value,shape = Visit),position = position_jitter(width = 0.2),)+
+  stat_boxplot(aes(Visit,value, fill = Visit),geom ='errorbar')+
+  stat_compare_means(comparisons = my_comparisons,p.adjust.method = "bonferroni",paired = T)+
+#  stat_compare_means(method = "anova",label = "p")+
+  scale_fill_brewer(palette = "Set2")+
+  xlab("Tryptophan related pathways")+
+  ylab('ng/ml')+
+  theme_classic()
+
+```
+
+
+## Boxplot of Bile Acids by visits
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=12, fig.height=12}
+
+
+
+edataNames = edataNames_BA
+#par(mfrow=c(3,3))
+dat_ba1 = dat_ba[,3:21]
+mx_ba = melt(dat_ba1,measure.vars = edataNames_BA,id = c("Subject","Visit"),variable.name = "BileAcids")
+rm.subject = c("16","22","28")
+mx_ba = mx_ba[!mx_ba$Subject %in% rm.subject,]
+
+
+##boxplot of bile Acids by visits
+ggplot(mx_ba,position = position_dodge(0.3))+
+  geom_boxplot(aes(BileAcids,value,fill = Visit))+
+  geom_point(aes(BileAcids,value,shape = Visit), position = position_jitterdodge(dodge.width = 0.8,jitter.width = 0.1))+
+  stat_boxplot(aes(BileAcids,value, fill = Visit),geom ='errorbar')+
+  scale_color_brewer(palette = "Set2")+
+  scale_fill_brewer(palette = "Set2")+
+  xlab("Bile Acids")+
+  ylab('ng/ml')+
+  theme_classic()
+
+
+##boxplot of bile Acids by visits with group comparison results
+my_comparisons = list(c("V1","V2"),c("V2","V3"),c("V1","V3"))
+ggboxplot(mx_ba,x = "Visit", y = "value",fill = "Visit",outlier.shape = NA)+
+  facet_wrap(~BileAcids,ncol = 9)+
+  geom_point(aes(Visit,value,shape = Visit),position = position_jitter(width = 0.2),)+
+  stat_boxplot(aes(Visit,value, fill = Visit),geom ='errorbar')+
+  stat_compare_means(comparisons = my_comparisons,p.adjust.method = "bonferroni",paired = T)+
+#  geom_text(data = plabel,aes(x = -Inf,-Inf,label = plabel),inherit.aes = FALSE)+
+#  stat_compare_means(method = "anova",label = "p")+
+    scale_fill_brewer(palette = "Set2")+
+  xlab("Tryptophan related pathways")+
+  ylab('ng/ml')+
+  theme_classic()
+  
+
+```
+
+
+##Boxplot of Tryptophan and Bile Acids by visits grouped by psychitric history
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=3*3, fig.height=3*3}
+
+his = matrix(NA,nrow = 30, ncol = 2)
+colnames(his) = c("Subject","his")
+his[,1]=c(1:30)
+his[c(8,10,14,18,24:25,29),2] = 'Anx'
+his[c(9,13,20,27),2] = 'MDD'
+his[c(5:7,11:12,17,19,22,30),2] = 'AnxorMDD'
+his[c(1:4,15:16,21,23,26,28),2] = 'None'
+
+mx1 = merge(dat_trp1,his,by = 'Subject')
+mx1 = na.omit(mx1)
+
+
+
+for(edataName in edataNames_Trp){
+    p = ggplot(mx1,position = position_dodge(width = 0.8))+
+    stat_boxplot(aes(his,get(edataName), fill = Visit),geom ='errorbar')+
+    geom_boxplot(aes(his,get(edataName),fill = Visit))+
+    scale_x_discrete(name = "psychiatric history",labels = c("Anx"="Anx(n = 7)","MDD"="MDD(n = 4)","AnxorMDD"="AnxorMDD(n = 9)","None"="None(n = 10)"))+
+    scale_fill_brewer(palette = "Set2")+
+    scale_color_brewer(palette = "Set2")+
+    xlab("Psychiatric History")+
+    ylab('ng/ml')+
+    ggtitle(edataName)+
+    theme_classic()+
+    #ggsave(sprintf('%s/Report/plots/trajectory/%s_boxplot.png',dir2,edataName),width = 6,height = 4)
+    print(p)
+}
+
+mx1 = merge(dat_ba1,his,by = 'Subject')
+for(edataName in edataNames_BA){
+    p = ggplot(mx1,position = position_dodge(width = 0.8))+
+    stat_boxplot(aes(his,get(edataName), fill = Visit),geom ='errorbar')+
+    geom_boxplot(aes(his,get(edataName),fill = Visit))+
+    scale_x_discrete(name = "psychiatric history",labels = c("Anx"="Anx(n = 7)","MDD"="MDD(n = 4)","AnxorMDD"="AnxorMDD(n = 9)","None"="None(n = 10)"))+
+    scale_fill_brewer(palette = "Set2")+
+    scale_color_brewer(palette = "Set2")+
+    xlab("Psychiatric History")+
+      
+    ylab('ng/ml')+
+    ggtitle(edataName)+
+    theme_classic()+
+    #ggsave(sprintf('%s/Report/plots/trajectory/%s_boxplot.png',dir2,edataName),width = 6,height = 4)
+    print(p)
+}
+
+
+
+```
+
+
+##Spaghetti plot of Tryptophan and Bile Acids by visits grouped by psychitric history
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=12, fig.height=18}
+
+mx1 = merge(dat_trp1,his,by = 'Subject')
+mx1 = na.omit(mx1)
+mx1$nVisit = as.numeric(substring(mx1$Visit,2,2))
+mx1$Subject = as.factor(mx1$Subject)
+#edataName = edataNames[1]
+
+his_labs = c("Anx(n = 7)","AnxorMDD(n = 9)","MDD(n = 4)","None(n = 10)")
+names(his_labs) = c("Anx","AnxorMDD","MDD","None")
+
+#spaghetti plot of Tryptophan by visit
+par(mfrow=c(2,2))
+edataname_trp = c('Tryptophan','Neopterin')
+for(edataName in edataname_trp){
+
+    p = ggplot(mx1)+
+    facet_grid(.~his,labeller = labeller(his = his_labs))+
+    geom_line(aes(nVisit,get(edataName),color = Subject))+
+    scale_x_continuous(breaks = seq(1,3,1))+
+    xlab("Visit")+
+    ylab('ng/ml')+
+    ggtitle(edataName)+
+    theme_classic()
+#    ggsave(sprintf('%s/Report/plots/trajectory/%s_spaghetti.png',dir2,edataName),width = 6,height = 4)
+    print(p)
+}
+
+#spaghetti plot of Bile Acids by visit
+
+mx1 = merge(dat_ba1,his,by = 'Subject')
+mx1$nVisit = as.numeric(substring(mx1$Visit,2,2))
+mx1$Subject = as.factor(mx1$Subject)
+for(edataName in edataNames_BA){
+    p = ggplot(mx1)+
+    facet_grid(.~his,labeller = labeller(his = his_labs))+
+    geom_line(aes(nVisit,get(edataName),color = Subject))+
+    scale_x_continuous(breaks = seq(1,3,1))+
+    xlab("Visit")+
+    ylab('ng/ml')+
+    ggtitle(edataName)+
+    theme_classic()+
+#    ggsave(sprintf('%s/Report/plots/trajectory/%s_spaghetti.png',dir2,edataName),width = 6,height = 4)
+    print(p)
+}
+
+
+##Grouping the spagetti plots of tryptophan and neopterin
+    pa = ggplot(mx_mood)+
+    facet_grid(.~Group,labeller = labeller(Group = his_labs))+
+    geom_line(aes(nVisit,GAD7,color = Subject),show.legend = FALSE)+
+    scale_x_continuous(breaks = seq(1,3,1))+
+    xlab("Visit")+
+    ylab('ng/ml')+
+    ggtitle('GAD7')+
+    theme(legend.position="none")+
+    theme_classic()
+    pb = ggplot(mx_mood)+
+    facet_grid(.~Group,labeller = labeller(Group = his_labs))+
+    geom_line(aes(nVisit,EPDS,color = Subject),show.legend = FALSE)+
+    scale_x_continuous(breaks = seq(1,3,1))+
+    xlab("Visit")+
+    ylab('ng/ml')+
+    ggtitle('EPDS')+
+    theme(legend.position="none")+
+    theme_classic()
+
+
+    p1 = ggplot(mx1)+
+    facet_grid(.~his,labeller = labeller(his = his_labs))+
+    geom_line(aes(nVisit,Tryptophan,color = Subject),show.legend = FALSE)+
+    scale_x_continuous(breaks = seq(1,3,1))+
+    xlab("Visit")+
+    ylab('ng/ml')+
+    ggtitle('Tryptophan')+
+    theme(legend.position="none")+
+    theme_classic()
+    p2 = ggplot(mx1)+
+    facet_grid(.~his,labeller = labeller(his = his_labs))+
+    geom_line(aes(nVisit,Kynurenine,color = Subject),show.legend = FALSE)+
+    scale_x_continuous(breaks = seq(1,3,1))+
+    xlab("Visit")+
+    ylab('ng/ml')+
+    ggtitle('Kynurenine')+
+    theme(legend.position="none")+
+    theme_classic()
+    p3 = ggplot(mx1)+
+    facet_grid(.~his,labeller = labeller(his = his_labs))+
+    geom_line(aes(nVisit,Kynurenic.Acid,color = Subject),show.legend = FALSE)+
+    scale_x_continuous(breaks = seq(1,3,1))+
+    xlab("Visit")+
+    ylab('ng/ml')+
+    ggtitle('Kynurenic.Acid')+
+    theme(legend.position="none")+
+    theme_classic()
+    p4 = ggplot(mx1)+
+    facet_grid(.~his,labeller = labeller(his = his_labs))+
+    geom_line(aes(nVisit,Neopterin,color = Subject),show.legend = FALSE)+
+    scale_x_continuous(breaks = seq(1,3,1))+
+    xlab("Visit")+
+    ylab('ng/ml')+
+    ggtitle('Neopterin')+
+    theme(legend.position="none")+
+    theme_classic()
+    p5 = ggplot(mx1)+
+    facet_grid(.~his,labeller = labeller(his = his_labs))+
+    geom_line(aes(nVisit,KA_KYN_Ratio,color = Subject),show.legend = FALSE)+
+    scale_x_continuous(breaks = seq(1,3,1))+
+    xlab("Visit")+
+    ylab('ng/ml')+
+    ggtitle('KA_KYN_Ratio')+
+    theme(legend.position="none")+
+    theme_classic()
+    p6 = ggplot(mx1)+
+    facet_grid(.~his,labeller = labeller(his = his_labs))+
+    geom_line(aes(nVisit,KYN_TRP_Ratio,color = Subject),show.legend = FALSE)+
+    scale_x_continuous(breaks = seq(1,3,1))+
+    xlab("Visit")+
+    ylab('ng/ml')+
+    ggtitle('KYN_TRP_Ratio')+
+    theme(legend.position="none")+
+    theme_classic()
+
+
+    library(gridExtra)
+    grid.arrange(pa,pb,p1,p2,p3,p4,p5,p6,ncol = 2)
+
+
+##Grouping the boxplots of tryptophan and neopterin
+    pa=ggplot(mx_mood,position = position_dodge(width = 0.8))+
+    stat_boxplot(aes(his,GAD7, fill = Visit),geom ='errorbar')+
+    geom_boxplot(aes(his,GAD7,fill = Visit))+
+    scale_x_discrete(name = "psychiatric history",labels = c("Anx"="Anx(n = 7)","MDD"="MDD(n = 4)","AnxorMDD"="AnxorMDD(n = 9)","None"="None(n = 10)"))+
+    scale_fill_brewer(palette = "Set2")+
+    scale_color_brewer(palette = "Set2")+
+    xlab("Visit")+
+    ylab('ng/ml')+
+    ggtitle('GAD7')+
+    theme(legend.position="none")+
+    theme_classic()
+    pb=ggplot(mx_mood,position = position_dodge(width = 0.8))+
+    stat_boxplot(aes(his,EPDS, fill = Visit),geom ='errorbar')+
+    geom_boxplot(aes(his,EPDS,fill = Visit))+
+    scale_x_discrete(name = "psychiatric history",labels = c("Anx"="Anx(n = 7)","MDD"="MDD(n = 4)","AnxorMDD"="AnxorMDD(n = 9)","None"="None(n = 10)"))+
+    scale_fill_brewer(palette = "Set2")+
+    scale_color_brewer(palette = "Set2")+
+    xlab("Visit")+
+    ylab('ng/ml')+
+    ggtitle('EPDS')+
+    theme(legend.position="none")+
+    theme_classic() 
+
+    p1 = ggplot(mx1)+
+    facet_grid(.~his,labeller = labeller(his = his_labs))+
+    geom_line(aes(nVisit,Tryptophan,color = Subject),show.legend = FALSE)+
+    scale_x_continuous(breaks = seq(1,3,1))+
+    xlab("Visit")+
+    ylab('ng/ml')+
+    ggtitle('Tryptophan')+
+    theme(legend.position="none")+
+    theme_classic()
+    p2 = ggplot(mx1)+
+    facet_grid(.~his,labeller = labeller(his = his_labs))+
+    geom_line(aes(nVisit,Kynurenine,color = Subject),show.legend = FALSE)+
+    scale_x_continuous(breaks = seq(1,3,1))+
+    xlab("Visit")+
+    ylab('ng/ml')+
+    ggtitle('Kynurenine')+
+    theme(legend.position="none")+
+    theme_classic()
+    p3 = ggplot(mx1)+
+    facet_grid(.~his,labeller = labeller(his = his_labs))+
+    geom_line(aes(nVisit,Kynurenic.Acid,color = Subject),show.legend = FALSE)+
+    scale_x_continuous(breaks = seq(1,3,1))+
+    xlab("Visit")+
+    ylab('ng/ml')+
+    ggtitle('Kynurenic.Acid')+
+    theme(legend.position="none")+
+    theme_classic()
+    p4 = ggplot(mx1)+
+    facet_grid(.~his,labeller = labeller(his = his_labs))+
+    geom_line(aes(nVisit,Neopterin,color = Subject),show.legend = FALSE)+
+    scale_x_continuous(breaks = seq(1,3,1))+
+    xlab("Visit")+
+    ylab('ng/ml')+
+    ggtitle('Neopterin')+
+    theme(legend.position="none")+
+    theme_classic()
+    p5 = ggplot(mx1)+
+    facet_grid(.~his,labeller = labeller(his = his_labs))+
+    geom_line(aes(nVisit,KA_KYN_Ratio,color = Subject),show.legend = FALSE)+
+    scale_x_continuous(breaks = seq(1,3,1))+
+    xlab("Visit")+
+    ylab('ng/ml')+
+    ggtitle('KA_KYN_Ratio')+
+    theme(legend.position="none")+
+    theme_classic()
+    p6 = ggplot(mx1)+
+    facet_grid(.~his,labeller = labeller(his = his_labs))+
+    geom_line(aes(nVisit,KYN_TRP_Ratio,color = Subject),show.legend = FALSE)+
+    scale_x_continuous(breaks = seq(1,3,1))+
+    xlab("Visit")+
+    ylab('ng/ml')+
+    ggtitle('KYN_TRP_Ratio')+
+    theme(legend.position="none")+
+    theme_classic()
+
+
+    library(gridExtra)
+    grid.arrange(pa,pb,p1,p2,p3,p4,p5,p6,ncol = 2)    
+  
+    
+    
+
+
+
+
+```
+
+
+##plot of change of Tryptophans vs Bile Acids at V1
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=3*3, fig.height=3*3}
+## reshape the responses data to wide format
+
+mx2= merge(dat_trp1,dat_ba1,by = c('Subject','Visit'))
+mx2_long = reshape(mx2, idvar='Subject', timevar = 'Visit', direction='wide')
+
+edataNames_diff21 = c()
+edataNames_diff32 = c()
+
+# calculate the diff of Trp pathway variables
+for(edataName in edataNames_Trp){
+  edataName_visits = paste(edataName,c('V1','V2','V3'),sep='.')
+  edataName_diff21 = paste(edataName,'V21',sep='.')
+  edataName_diff32 = paste(edataName,'V32',sep='.')
+  mx2_long[[edataName_diff21]] = mx2_long[, edataName_visits[2]] - mx2_long[, edataName_visits[1]]
+  mx2_long[[edataName_diff32]] = mx2_long[, edataName_visits[3]] - mx2_long[, edataName_visits[2]]
+  
+  edataNames_diff21 = c(edataNames_diff21, edataName_diff21)
+  edataNames_diff32 = c(edataNames_diff32, edataName_diff32)
+
+}
+
+edataName = c('Tryptophan.V21','Kynurenine.V21',rep('Neopterin.V21',7),rep('KA_KYN_Ratio.V21',3))
+cdataName = c(rep('TUDCA.V1',2),'TaMCA.V1','THCA.V1','TUDCA.V1','TCA.V1','GCA.V1','TCDCA.V1','TDCA.V1','TUDCA.V1','TCA.V1','GCA.V1')
+
+par(mfrow=c(4,3))
+for(i in 1:12){
+  plot(mx2_long[,cdataName[i]],mx2_long[,edataName[i]],xlab=cdataName[i],ylab=edataName[i],cex.lab = 1.5)
+  if(class(mx2_long[,cdataName[i]]) == 'numeric'){
+    if(var(mx2_long[,cdataName[i]], na.rm = TRUE) !=0){
+      #abline(lm1)
+      abline(lm(mx2_long[,edataName[i]] ~ mx2_long[,cdataName[i]]))
+    }
+  }
+}
+```
+
+
+
+##plot of Bile Acids vs Diversity
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=3*3, fig.height=3*3}
+## reshape the responses data to wide format
+
+mx2= merge(dat_trp1,dat_ba1,by = c('Subject','Visit'))
+
+
+edataName = c('GUDCA','UDCA')
+cdataName = c("pielou_e","observed_otus","faith_pd","shannon")
+  
+```
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=3*4, fig.height=3*5}
+  setwd(dir1)
+
+  filein_div = sprintf('%s/qiime2_diversity.csv',dir_mb)
+  dat_div = read.csv(filein_div)
+  mx3 = merge(dat_trp[,c(1:5,44:51)],dat_ba,by=c('Subject','Visit'),sort = FALSE,all=TRUE)
+  mx3 = merge(mx3,dat_div,by='barcode')
+
+
+  edataNames = c('GUDCA','UDCA')
+  cdataNames = c("pielou_e","observed_otus","faith_pd","shannon")
+  clabNames = c("Pielou's evenness","Observed OTUs","Faith's PD","Shannon")
+  timeName = 'Visit'
+  
+plot_longitudinal = function(mx2,cdataNames,edataNames, timeName
+                                         , dataName='out',dir_out = 'output',y0,p) {
+  timeNames = unique(mx2[,timeName])
+  n_time = length(timeNames)
+  #cols = ('red','green','blue','yellow','pink','black')
+  cols = rainbow(n_time)
+  for(j in 1:length(edataNames)){
+    for(i in 1:length(cdataNames)){
+        x_min = min(0,mx2[,cdataNames[i]], na.rm= TRUE)
+        x_max = max(mx2[,cdataNames[i]], na.rm = TRUE)
+        y = mx2[,edataNames[j]]
+        x = mx2[,cdataNames[i]]
+        idx_keep = which(!is.na(x) & !is.na(y))
+        idx_timeName = match(mx2[,timeName], timeNames)
+       plot(x[idx_keep], y[idx_keep]
+          , pch = idx_timeName[idx_keep]
+          , col = cols[idx_timeName[idx_keep]]
+          , xlab=clabNames[i], ylab=edataNames[j],cex.lab = 1.5
+          )
+        legend('topright', legend=timeNames, col=cols, pch=1:n_time)
+        abline(lm(y~x))
+        xmin = min(mx2[,cdataNames[i]], na.rm= TRUE)
+        xmax = max(mx2[,cdataNames[i]], na.rm= TRUE)
+        text(xmin+0.15*(xmax-xmin),y0,label = paste('p=',p[i]),cex = 1.5)
+    }
+  }
+}
+p1 = c(0.0016,0.0268,0.0025,0.0019)
+p2 = c("5.77E-07","4.70E-05","6.51E-06","1.15E-07")
+p3 = 0.0011
+  par(mfrow=c(4,3))
+  plot_longitudinal(mx3,cdataNames,'GUDCA', timeName,dataName = dataName, dir_out = dir_out,y0 = 2.1,p = p1)
+  plot_longitudinal(mx3,cdataNames,'UDCA', timeName,dataName = dataName, dir_out = dir_out,y0 = -0.9,p = p2)
+  plot_longitudinal(mx3,'pielou_e', 'CDCA',timeName,dataName = dataName, dir_out = dir_out,y0 = 1.1, p = p3)
+
+
+```
+
