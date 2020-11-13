@@ -1,0 +1,353 @@
+---
+title: "get_analysis_ba_PCA"
+author: "Wanting Jin"
+date: "11/18/2019"
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+# Outline of the analysis
+* Principle Components analysis of processed Bile Acids data by visit1~3
+* K-means clustering of Tryptophan and processed Bile Acids
+
+## PCA of processed Bile Acids data by visit
+\newpage
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.height = 8, fig.width = 6}
+dir1 = 'E:/Github/mbml/Scripts'
+dir2 = 'E:/Wanting/mbml'
+setwd(dir1)
+
+library(knitr)
+library(ggplot2)
+library(reshape2)
+library(lme4)
+source('data_analysis_MBML.R')
+
+dir_mb = '../processed_data'
+dir_raw = '../raw_data'
+dir_out = sprintf('%s/results',dir2)
+filein_ba = sprintf('%s/imputed_bilacid_log.csv',dir_mb)
+dat_ba = read.csv(filein_ba)
+filein_trp = sprintf('%s/mbml_trp0.csv',dir_mb)
+dat_trp = read.csv(filein_trp)
+
+filein_div = sprintf('%s/qiime2_diversity.csv',dir_mb)
+dat_div = read.csv(filein_div)
+
+edataNames = c('TaMCA','THCA','GHCA','TUDCA'
+               ,'GUDCA','TCA','GCA'
+               ,'CA','UDCA','TCDCA','GCDCA','TDCA'
+               ,'GDCA','CDCA','DCA','GLCA','bMCA')
+setwd(dir2)
+filein_mood = './Data/processed_data/MPPD_Data_Master_09-13-2020.csv'
+dat_mood = read.csv(filein_mood)
+dat_GAD = dat_mood[1:30,c(1,21,48,50,52)]
+dat_EPDS = dat_mood[1:30,c(1,21,54,57,60)]
+colnames(dat_GAD)= c('Subject','Group','V1','V2','V3')
+colnames(dat_EPDS)= c('Subject','Group','V1','V2','V3')
+mx_GAD = melt(dat_GAD,measure.vars=c('V1','V2','V3'),id = c('Subject','Group'),variable.name = 'Visit',value.name = 'GAD7')
+mx_EPDS = melt(dat_EPDS,measure.vars=c('V1','V2','V3'),id = c('Subject','Group'),variable.name = 'Visit',value.name = 'EPDS')
+mx_mood = merge(mx_GAD,mx_EPDS,by = c('Subject','Group','Visit'))
+mx_mood$nVisit = as.numeric(substring(mx_mood$Visit,2,2))
+mx_mood$EPDS = as.numeric(mx_mood$EPDS)
+mx_mood$GAD7 = as.numeric(mx_mood$GAD7)
+mx_mood$Subject = as.numeric(substring(mx_mood$Subject,5,6))
+
+
+```
+
+
+
+## K-means clustering of Bile Acids data from all three visits
+\newpage
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE, figures-side, fig.show="hold", out.width="50%"}
+dir1 = 'E:/Github/mbml/Scripts'
+dir2 = 'E:/Wanting/mbml'
+setwd(dir1)
+library(factoextra)
+
+
+
+edataNames = c('TaMCA','THCA','GHCA','TUDCA'
+               ,'GUDCA','TCA','GCA'
+               ,'CA','UDCA','TCDCA','GCDCA','TDCA'
+               ,'GDCA','CDCA','DCA','GLCA','bMCA')
+cluster_ba = dat_ba
+cluster_ba$nVisit = as.numeric(substring(cluster_ba$Visit,2,2))
+
+
+ks = 2:3
+set.seed(20)
+
+
+
+##converting to long format
+mx1 = merge(dat_trp[,c(1:5,44:51)],dat_ba,by=c('Subject','Visit'),sort = FALSE,all=TRUE)
+mx2 = merge(mx1,dat_div,by='barcode')
+mx3 = merge(mx2,mx_mood, by = c('Subject','Visit'))
+ba_long = reshape(dat_ba, idvar='Subject', timevar = 'Visit', direction='wide')
+ba_long = ba_long[-c(16,22,28),]
+edataNames = c('UDCA','CDCA','TaMCA')
+
+
+for(edataName in c('UDCA','CDCA','TaMCA')){
+  edataName_visits = paste(edataName,c('V1','V2','V3'),sep='.')
+  
+  for(k in ks){
+      clusters <- kmeans(ba_long[,edataName_visits],k)
+      cluster_ba = ba_long
+      cluster_ba$cluster = clusters$cluster
+      for(i in 1:k){
+        sprintf('k = ', i)
+        print(cluster_ba[cluster_ba$cluster == i,1])
+      }
+      
+      dat_cluster = merge(mx3,cluster_ba[,c(1,59)],by = 'Subject')
+      dat_cluster$nVisit = as.numeric(substring(dat_cluster$Visit,2,2))
+      
+      #spaghetti plot of bile acids by clusters
+      p = ggplot(dat_cluster)+
+        facet_grid(.~cluster)+
+        geom_line(aes(nVisit,get(edataName),color = as.factor(Subject)))+
+        scale_x_continuous(breaks = seq(1,3,1))+
+        #geom_text(data = dat_ba1[dat_ba1$nVisit==2,],aes(x = 2,y = get(edataName),label = Subject))+
+        xlab("Visit")+
+        ylab('ng/ml')+
+        ggtitle(edataName)+
+        theme_classic()
+        #ggsave(sprintf('%s/Report/plots/trajectory/%s_spaghetti.png',dir2,edataName),width = 6,height = 4)
+      print(p)
+      
+      #spaghetti plot of alpha-diversity by clusters
+      for(divname in c('shannon','pielou_e','GAD7','EPDS')){
+        p = ggplot(dat_cluster)+
+          facet_grid(.~cluster)+
+          geom_line(aes(nVisit,get(divname),color = as.factor(Subject)))+
+          scale_x_continuous(breaks = seq(1,3,1))+
+          #geom_text(data = dat_ba1[dat_ba1$nVisit==2,],aes(x = 2,y = get(edataName),label = Subject))+
+          xlab("Visit")+
+          ylab('ng/ml')+
+          ggtitle(sprintf('%s clustered by %s ',divname, edataName))+
+          theme_classic()
+          #ggsave(sprintf('%s/Report/plots/trajectory/%s_spaghetti.png',dir2,edataName),width = 6,height = 4)
+          print(p)
+      }
+      #dataMatrix = as.matrix(ba_long[,edataName_visits])
+      #image(t(dataMatrix)[,order(cluster_ba$cluster)],yaxt = "n",main = "clustered Data")
+  }
+}
+
+
+trp_long = reshape(dat_trp[,c(1:5,44:51)], idvar='Subject', timevar = 'Visit', direction='wide')
+trp_long = trp_long[!trp_long$Subject %in% c(6,7,16,22,28),]
+edataNames = c('Kynurenine','Kynurenic.Acid','Neopterin')
+
+
+for(edataName in edataNames){
+  edataName_visits = paste(edataName,c('V1','V2','V3'),sep='.')
+  
+  for(k in ks){
+      clusters <- kmeans(trp_long[,edataName_visits],k)
+      cluster_trp = trp_long
+      cluster_trp$cluster = clusters$cluster
+       for(i in 1:k){
+        print(cluster_trp[cluster_trp$cluster == i,1])
+      }
+      dat_cluster = merge(mx3,cluster_trp[,c(1,35)],by = 'Subject')
+      dat_cluster$nVisit = as.numeric(substring(dat_cluster$Visit,2,2))
+      
+      #spaghetti plot of bile acids by clusters
+      p = ggplot(dat_cluster)+
+        facet_grid(.~cluster)+
+        geom_line(aes(nVisit,get(edataName),color = as.factor(Subject)))+
+        scale_x_continuous(breaks = seq(1,3,1))+
+        #geom_text(data = dat_ba1[dat_ba1$nVisit==2,],aes(x = 2,y = get(edataName),label = Subject))+
+        xlab("Visit")+
+        ylab('ng/ml')+
+        ggtitle(edataName)+
+        theme_classic()
+        #ggsave(sprintf('%s/Report/plots/trajectory/%s_spaghetti.png',dir2,edataName),width = 6,height = 4)
+      print(p)
+      
+      #spaghetti plot of alpha-diversity by clusters
+      for(divname in c('shannon','pielou_e','GAD7','EPDS')){
+        p = ggplot(dat_cluster)+
+          facet_grid(.~cluster)+
+          geom_line(aes(nVisit,get(divname),color = as.factor(Subject)))+
+          scale_x_continuous(breaks = seq(1,3,1))+
+          #geom_text(data = dat_ba1[dat_ba1$nVisit==2,],aes(x = 2,y = get(edataName),label = Subject))+
+          xlab("Visit")+
+          ylab('ng/ml')+
+          ggtitle(sprintf('%s clustered by %s ',divname, edataName))+
+          theme_classic()
+          #ggsave(sprintf('%s/Report/plots/trajectory/%s_spaghetti.png',dir2,edataName),width = 6,height = 4)
+          print(p)
+      }
+      #dataMatrix = as.matrix(ba_long[,edataName_visits])
+      #image(t(dataMatrix)[,order(cluster_ba$cluster)],yaxt = "n",main = "clustered Data")
+      
+  }
+}
+
+
+```
+
+
+## Combine K-means clustering of Bile Acids and tryptophan data from all three visits
+\newpage
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE, figures-side, fig.width=12, fig.height=12}
+dir1 = 'E:/Github/mbml/Scripts'
+dir2 = 'E:/Wanting/mbml'
+setwd(dir1)
+library(factoextra)
+
+
+
+cluster_ba = dat_ba
+cluster_ba$nVisit = as.numeric(substring(cluster_ba$Visit,2,2))
+
+
+k = 2
+set.seed(20)
+
+
+
+##converting to long format
+mx1 = merge(dat_trp[,c(1:5,40:47)],dat_ba,by=c('Subject','Visit'),sort = FALSE,all=TRUE)
+mx2 = merge(mx1,dat_div,by='barcode')
+mx3 = merge(mx2,mx_mood, by = c('Subject','Visit'))
+ba_long = reshape(dat_ba, idvar='Subject', timevar = 'Visit', direction='wide')
+ba_long = ba_long[-c(16,22,28),]
+edataNames = c('UDCA','CDCA','TaMCA')
+
+cluster_ba = ba_long
+edataName_visits = paste('UDCA',c('V1','V2','V3'),sep='.')
+clusters <- kmeans(ba_long[,edataName_visits],k)
+cluster_ba$cluster = clusters$cluster
+dat_cluster = merge(mx3,cluster_ba[,c(1,59)],by = 'Subject')
+dat_cluster$nVisit = as.numeric(substring(dat_cluster$Visit,2,2))
+#spaghetti plot of bile acids by clusters
+p1 = ggplot(dat_cluster)+
+  facet_grid(.~cluster)+
+  geom_line(aes(nVisit,UDCA,color = as.factor(Subject)))+
+  scale_x_continuous(breaks = seq(1,3,1))+
+  #geom_text(data = dat_ba1[dat_ba1$nVisit==2,],aes(x = 2,y = get(edataName),label = Subject))+
+  xlab("Visit")+
+  ylab('ng/ml')+
+  ggtitle('UDCA')+
+  theme_classic()+
+  labs(color = 'Subject')
+  #ggsave(sprintf('%s/Report/plots/trajectory/%s_spaghetti.png',dir2,edataName),width = 6,height = 4)
+  #print(p)
+
+edataName_visits = paste('CDCA',c('V1','V2','V3'),sep='.')
+clusters <- kmeans(ba_long[,edataName_visits],k)
+cluster_ba$cluster = clusters$cluster
+dat_cluster = merge(mx3,cluster_ba[,c(1,59)],by = 'Subject')
+dat_cluster$nVisit = as.numeric(substring(dat_cluster$Visit,2,2))
+p2 = ggplot(dat_cluster)+
+  facet_grid(.~cluster)+
+  geom_line(aes(nVisit,CDCA,color = as.factor(Subject)))+
+  scale_x_continuous(breaks = seq(1,3,1))+
+  #geom_text(data = dat_ba1[dat_ba1$nVisit==2,],aes(x = 2,y = get(edataName),label = Subject))+
+  xlab("Visit")+
+  ylab('ng/ml')+
+  ggtitle('CDCA')+
+  theme_classic()+
+  labs(color = 'Subject')
+  #ggsave(sprintf('%s/Report/plots/trajectory/%s_spaghetti.png',dir2,edataName),width = 6,height = 4)
+  #print(p)
+
+edataName_visits = paste('TaMCA',c('V1','V2','V3'),sep='.')
+clusters <- kmeans(ba_long[,edataName_visits],k)
+cluster_ba$cluster = clusters$cluster
+dat_cluster = merge(mx3,cluster_ba[,c(1,59)],by = 'Subject')
+dat_cluster$nVisit = as.numeric(substring(dat_cluster$Visit,2,2))
+p3 = ggplot(dat_cluster)+
+  facet_grid(.~cluster)+
+  geom_line(aes(nVisit,TaMCA,color = as.factor(Subject)))+
+  scale_x_continuous(breaks = seq(1,3,1))+
+  #geom_text(data = dat_ba1[dat_ba1$nVisit==2,],aes(x = 2,y = get(edataName),label = Subject))+
+  xlab("Visit")+
+  ylab('ng/ml')+
+  ggtitle('TaMCA')+
+  theme_classic()+
+  labs(color = 'Subject')
+  #ggsave(sprintf('%s/Report/plots/trajectory/%s_spaghetti.png',dir2,edataName),width = 6,height = 4)
+  #print(p)
+
+
+trp_long = reshape(dat_trp[,c(1:5,40:47)], idvar='Subject', timevar = 'Visit', direction='wide')
+trp_long = trp_long[!trp_long$Subject %in% c(16,22,28),]
+edataNames = c('Kynurenine','Kynurenic.Acid','Neopterin')
+cluster_trp = trp_long
+
+
+edataName_visits = paste('Kynurenine',c('V1','V2','V3'),sep='.')
+clusters <- kmeans(trp_long[,edataName_visits],k)
+cluster_trp$cluster = clusters$cluster
+dat_cluster = merge(mx3,cluster_trp[,c(1,35)],by = 'Subject')
+dat_cluster$nVisit = as.numeric(substring(dat_cluster$Visit,2,2))
+#spaghetti plot of bile acids by clusters
+p4 = ggplot(dat_cluster)+
+  facet_grid(.~cluster)+
+  geom_line(aes(nVisit,Kynurenine,color = as.factor(Subject)))+
+  scale_x_continuous(breaks = seq(1,3,1))+
+  #geom_text(data = dat_ba1[dat_ba1$nVisit==2,],aes(x = 2,y = get(edataName),label = Subject))+
+  xlab("Visit")+
+  ylab('ng/ml')+
+  ggtitle('Kynurenine')+
+  theme_classic()+
+  labs(color = 'Subject')
+  #ggsave(sprintf('%s/Report/plots/trajectory/%s_spaghetti.png',dir2,edataName),width = 6,height = 4)
+  #print(p)
+
+edataName_visits = paste('Kynurenic.Acid',c('V1','V2','V3'),sep='.')
+clusters <- kmeans(trp_long[,edataName_visits],k)
+cluster_trp$cluster = clusters$cluster
+dat_cluster = merge(mx3,cluster_trp[,c(1,35)],by = 'Subject')
+dat_cluster$nVisit = as.numeric(substring(dat_cluster$Visit,2,2))
+#spaghetti plot of bile acids by clusters
+p5 = ggplot(dat_cluster)+
+  facet_grid(.~cluster)+
+  geom_line(aes(nVisit,Kynurenic.Acid,color = as.factor(Subject)))+
+  scale_x_continuous(breaks = seq(1,3,1))+
+  #geom_text(data = dat_ba1[dat_ba1$nVisit==2,],aes(x = 2,y = get(edataName),label = Subject))+
+  xlab("Visit")+
+  ylab('ng/ml')+
+  ggtitle('Kynurenic.Acid')+
+  theme_classic()+
+  labs(color = 'Subject')
+  #ggsave(sprintf('%s/Report/plots/trajectory/%s_spaghetti.png',dir2,edataName),width = 6,height = 4)
+  #print(p)
+
+edataName_visits = paste('Neopterin',c('V1','V2','V3'),sep='.')
+clusters <- kmeans(trp_long[,edataName_visits],k)
+cluster_trp$cluster = clusters$cluster
+dat_cluster = merge(mx3,cluster_trp[,c(1,35)],by = 'Subject')
+dat_cluster$nVisit = as.numeric(substring(dat_cluster$Visit,2,2))
+#spaghetti plot of bile acids by clusters
+p6 = ggplot(dat_cluster)+
+  facet_grid(.~cluster)+
+  geom_line(aes(nVisit,Neopterin,color = as.factor(Subject)))+
+  scale_x_continuous(breaks = seq(1,3,1))+
+  #geom_text(data = dat_ba1[dat_ba1$nVisit==2,],aes(x = 2,y = get(edataName),label = Subject))+
+  xlab("Visit")+
+  ylab('ng/ml')+
+  ggtitle('Neopterin')+
+  theme_classic()+
+  labs(color = 'Subject')
+  #ggsave(sprintf('%s/Report/plots/trajectory/%s_spaghetti.png',dir2,edataName),width = 6,height = 4)
+  #print(p)
+
+library(gridExtra)
+grid.arrange(p1,p2,p3,p4,p5,p6,ncol = 2)
+
+
+```
