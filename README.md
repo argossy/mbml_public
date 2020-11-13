@@ -33,6 +33,6 @@ get_analysis_microbiome_BA.Rmd
 
 #### Association analysis between PICRUSt2 predications and metabolites
 ``` js
-Create get_analysis_picrust2.Rmd
+get_analysis_picrust2.Rmd
 ```
 
