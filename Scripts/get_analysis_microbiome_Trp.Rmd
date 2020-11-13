@@ -1,0 +1,757 @@
+---
+title: "Mother-baby microbiome longitudinal study"
+author:
+- Kai Xia
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+
+
+# Outline of the analysis
+* boxplot and histogram to analyze the distribution and outliers
+* summary statistics to summarize the data
+* Tryptophan.methyl.ester was removed due to low QC
+* outlier detection to identify extreme outliers (above Q3 + 3*IQR) 
+
+
+
+
+```{r echo=FALSE, message=FALSE, cache=FALSE, include=FALSE, results='hide', warnings=FALSE}
+### load data file Microbiome diversity raw file
+dir1 = 'E:/Github/mbml/Scripts'
+dir2 = 'E:/Wanting/mbml'
+setwd(dir1)
+
+#library(readxl)
+library(tidyr)
+library(stringr)
+library(knitr)
+library(dplyr)
+library("lme4")
+library(lmerTest)
+
+library(magrittr)
+library(qwraps2)
+
+dataset = 'mom_mb'
+
+
+#setwd(dir1)
+dir_mb = '../processed_data'
+dir_raw = '../raw_data'
+dir_cvrt = sprintf('%s/cvrt',dir_raw)
+dir_out = sprintf('%s/results/',dir2)
+
+
+
+#filein_trp = sprintf('%s/Tryptophan_MS_041719.csv',dir_lab)
+
+#dat_trp = read.csv(filein_trp,strings=FALSE,header=TRUE)
+#tmp = unlist(strsplit(dat_trp$Sample.Name,'\\.'))
+#mx_tmp=matrix(tmp,byrow=TRUE,ncol=2)
+#dat_trp$Subject = mx_tmp[,1]
+#dat_trp$Visit = mx_tmp[,2]
+
+#dat_trp$KYN_TRP_Ratio = dat_trp$Kynurenine / dat_trp$Tryptophan
+#dat_trp$KA_KYN_Ratio = dat_trp$Kynurenic.Acid / dat_trp$Kynurenine
+
+## remove the subject 6 and 7
+#id_rm = c(6,7)
+#dat_trp = dat_trp[!dat_trp$Subject %in% id_rm,]
+
+
+#file_data = sprintf('%s/mbml.csv',dir_mb)
+#dat1 = read.csv(file_data)
+
+#fileout_trp = sprintf('%s/TRP.csv',dir_mb)
+#write.csv(dat_trp,fileout_trp, row.names = FALSE)
+
+#mx1 = merge(dat1,dat_trp,by=c('Subject','Visit'),sort = FALSE,all=TRUE)
+
+#fileout_data = sprintf('%s/mbml_trp1.csv',dir_mb)
+
+#write.csv(mx1,fileout_data, row.names = FALSE)
+
+
+```
+
+# Trptophan analysis
+
+## Boxplot and histogram for Tryptophan related pathway
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=3*3, fig.height=3*3}
+### summary stat analysis for the TRP
+#edataNames = c('Tryptophan','Kynurenine','Kynurenic.Acid','Neopterin','Serotonin')
+setwd(dir1)
+filein_trp = sprintf('%s/mbml_trp.csv',dir_mb)
+dat_trp = read.csv(filein_trp)
+
+#dat_trp$KYN_TRP_Ratio = dat_trp$Kynurenine / dat_trp$Tryptophan
+#dat_trp$KA_KYN_Ratio = dat_trp$Kynurenic.Acid / dat_trp$Kynurenine
+
+edataNames = c('Tryptophan','Kynurenine','Kynurenic.Acid','Neopterin','Serotonin', 'KYN_TRP_Ratio', 'KA_KYN_Ratio')
+
+
+par(mfrow=c(3,3))
+for(i in 1:length(edataNames)){
+  edataName = edataNames[i]
+  boxplot(dat_trp[,edataName], notch = FALSE, main=edataName, ylab=paste('ng/mL'))
+  #boxplot.with.outlier.label(dat_trp[,edataName],dat_trp$sampID)
+}
+
+```
+
+## Boxplot of Tryptophan related pathway by visits
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=3*3, fig.height=3*3}
+
+par(mfrow=c(3,3))
+for(i in 1:length(edataNames)){
+  edataName = edataNames[i]
+  
+  fm1 = sprintf('%s ~ Visit',edataName)
+  fm1 = as.formula(fm1)
+  boxplot(fm1, data= dat_trp, notch = FALSE,  main=edataName, ylab=paste('ng/mL'))
+}
+
+```
+
+## Histogram of Tryptophan related pathway
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=3*3, fig.height=3*3}
+
+par(mfrow=c(3,3))
+for(i in 1:length(edataNames)){
+  edataName = edataNames[i]
+  hist(dat_trp[,edataName], main=edataName, xlab=paste('ng/mL'),breaks=20)
+  #boxplot.with.outlier.label(dat_trp[,edataName],dat_trp$sampID)
+}
+
+
+```
+
+\newpage
+
+## Summary statistics for Tryptophan
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE}
+
+
+options(qwraps2_markup = "markdown")
+
+idx_stat = c(1,4,3)
+our_summary2 <-
+  with(dat_trp,
+       list("Tryptophan" = tab_summary(Tryptophan)[idx_stat],
+         #   "Tryptophan.methyl.ester" = tab_summary(Tryptophan.methyl.ester)[idx_stat] ,
+            "Kynurenine" = tab_summary(Kynurenine)[idx_stat],
+            "Kynurenic.Acid" = tab_summary(Kynurenic.Acid)[idx_stat],
+            "Neopterin" = tab_summary(Neopterin)[idx_stat],
+            "Serotonin" = tab_summary(Serotonin)[idx_stat],
+            "KYN_TRP_Ratio" = tab_summary(KYN_TRP_Ratio)[idx_stat],
+            "KA_KYN_Ratio" = tab_summary(KA_KYN_Ratio)[idx_stat]
+
+           #                    "mean (95% CI)" = ~ frmtci(qwraps2::mean_ci(Kynurenine, na_rm=TRUE)))
+           # "Forward Gears" = tab_summary(as.character(gear))
+       ))
+            
+            
+whole <- summary_table(dat_trp, our_summary2)
+#print(kable(whole))
+
+grouped <- summary_table(dplyr::group_by(dat_trp, Visit), our_summary2)
+#grouped
+
+both = cbind(whole, grouped)
+colnames(both)[1] = 'All'
+print(both,rtitle='Trptophan Pathway',font_size = 2,caption='Summary statistics for Trptophan analysis')
+
+
+
+```
+
+\newpage
+
+
+## Outlier detection for Tryptophan
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE}
+### print the outlier subject, visit and values
+
+### remove extreme subject values for other pain ratings under flavor = 0 and nico = 0
+#painNames = c('THRES_COLD','TOLR_COLD','INTS_COLD','UNPLS_COLD','THRES_ISCH','TOLR_ISCH','INTS4_ISCH','UNPLS4_ISCH','MXNUM_ISCH')
+### the extreme outliers are defined as:
+# Extreme Outliers fall greater than 3.0*IQR outside the IQR and are plotted with a closed circle ['Tag'='OutliersX'].
+# For example, if the lower and upper ranges on the IQR are 4 and 6, the IQR=2.0 and values between 6+(1.5*2) and 6+(3*2) ( = 9 and 12) 
+# or between 4-(1.5*2) and 4-(3*2) ( = 1 and -2) are considered standard outliers. Samples above 12 or below -2 are considered extreme outliers.
+ 
+mx1 = dat_trp
+
+IQR_upper = rep(NA,length(edataNames))
+for(j in 1:length(edataNames)){
+	## I think we only need to worry about the upper extreme outlier in this study
+	y1 = mx1[,edataNames[j]]
+	IQR_upper[j] = quantile(y1, 3/4,na.rm=TRUE) + 3*IQR(y1, na.rm=TRUE)
+	#boxplot_list[[i]] = boxplot(dat1[dat1$flavor == 0 & dat1$nico == 0,painNames[j]])
+}
+
+
+mx_ot = c()
+#pain_rm = c()
+for(i in 1:dim(mx1)[1]){
+	for(j in 1:length(edataNames)){
+		#if(dat1$flavor[i] == 0 & dat1$nico[i] == 0){
+	  val = mx1[i,edataNames[j]]
+	  #print(paste(val,IQR_upper[j]))
+			if(!is.na(val) & val > IQR_upper[j]){
+				#dat1[i,painNames[j]] = 'NA'
+			  rowLine = c(mx1$Subject[i], mx1$Visit[i],edataNames[j],IQR_upper[j], val)
+			  
+				mx_ot = rbind(mx_ot, rowLine)
+				#sub_rm = c(sub_rm,mx1$SUBJECT[i])
+				#pain_rm = c(pain_rm,edataNames[j])
+				
+
+		  }
+		#}
+	}
+}
+
+colnames(mx_ot) = c('Subject','Visit','Measures','Upper range (Q3+3*IQR)','Value')
+
+kable(mx_ot,row.names=FALSE)
+
+
+
+
+```
+
+\newpage
+
+
+## Spaghetti plot for Tryptophan pathway
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=4*3, fig.height=4*3}
+#interaction.plot(dat_trp$Visit, dat_trp$Subject, dat_trp$Tryptophan)
+
+par(mfrow=c(3,3))
+for(i in 1:length(edataNames)){
+  edataName = edataNames[i]
+  
+  interaction.plot(dat_trp$Visit, dat_trp$Subject, dat_trp[,edataName], xlab="Visits", ylab='ng/mL', main=edataName, col=c(1:30), legend=F)
+}
+
+```
+
+
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE, fig.height=2*6, fig.width=2*5}
+#interaction.plot(dat_trp$Visit, dat_trp$Subject, dat_trp$Tryptophan)
+
+par(mfrow=c(6,5))
+
+for(i in 1:length(edataNames)){
+  edataName = edataNames[i]
+  ymax = max(dat_trp[,edataName],na.rm= TRUE)
+  for(id in sort(unique(dat_trp$Subject))){
+      dat1 = dat_trp[dat_trp$Subject == id,]
+      dat1$Visit = as.integer(gsub('V','',dat1$Visit))
+      plot(dat1$Visit, dat1[,edataName],xlab="Visits", ylab='ng/mL', main=paste(edataName,':','ID',id),type='l',ylim=c(0,ymax) )
+  }
+
+}
+```
+
+
+\newpage
+
+## Correlation of Trptophan pathway
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE, fig.height=6, fig.width=2*5}
+
+library(ggplot2)
+library(reshape2)
+
+cormat = round(cor(dat_trp[,edataNames], use="pairwise.complete.obs"), 2)
+
+
+melted_cormat <- melt(cormat)
+#head(melted_cormat)
+
+
+
+# Get lower triangle of the correlation matrix
+  get_lower_tri<-function(cormat){
+    cormat[upper.tri(cormat)] <- NA
+    return(cormat)
+  }
+  # Get upper triangle of the correlation matrix
+  get_upper_tri <- function(cormat){
+    cormat[lower.tri(cormat)]<- NA
+    return(cormat)
+  }
+  
+upper_tri <- get_upper_tri(cormat)
+
+
+reorder_cormat <- function(cormat){
+# Use correlation between variables as distance
+dd <- as.dist((1-cormat)/2)
+hc <- hclust(dd)
+cormat <-cormat[hc$order, hc$order]
+}
+
+#Reorder the correlation matrix
+cormat <- reorder_cormat(cormat)
+upper_tri <- get_upper_tri(cormat)
+# Melt the correlation matrix
+melted_cormat <- melt(upper_tri, na.rm = TRUE)
+# Create a ggheatmap
+ggheatmap <- ggplot(melted_cormat, aes(Var2, Var1, fill = value))+
+ geom_tile(color = "white")+
+ scale_fill_gradient2(low = "blue", high = "red", mid = "white",
+   midpoint = 0, limit = c(-1,1), space = "Lab",
+    name="Pearson\nCorrelation") +
+  theme_minimal()+ # minimal theme
+ theme(axis.text.x = element_text(angle = 45, vjust = 1,
+    size = 12, hjust = 1))+
+ coord_fixed()
+# Print the heatmap
+#print(ggheatmap)
+
+
+ggheatmap + 
+geom_text(aes(Var2, Var1, label = value), color = "black", size = 4) +
+theme(
+  axis.title.x = element_blank(),
+  axis.title.y = element_blank(),
+  panel.grid.major = element_blank(),
+  panel.border = element_blank(),
+  panel.background = element_blank(),
+  axis.ticks = element_blank(),
+  legend.justification = c(1, 0),
+  legend.position = c(0.6, 0.7),
+  legend.direction = "horizontal")+
+  guides(fill = guide_colorbar(barwidth = 7, barheight = 1,
+                title.position = "top", title.hjust = 0.5))
+
+
+
+```
+
+
+\newpage
+
+## Association analysis for Tryptophan pathway
+
+
+
+
+### Tryptophan of three visits as function of beta and alpha diversity of microbiome
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=2.5*4, fig.height=2.5*6}
+
+dir1 = 'E:/Github/mbml/Scripts'
+dir2 = 'E:/Wanting/mbml'
+
+
+setwd(dir1)
+
+
+library(knitr)
+library("lme4")
+library(lmerTest)
+#library(survival)
+#library(coxme)
+
+
+
+source('data_analysis_MBML.R')
+
+
+#dir_beha = 'behaviordata'
+dir_mb = '../processed_data'
+dir_raw = '../raw_data'
+dir_cvrt = sprintf('%s/cvrt',dir_raw)
+dir_out = sprintf('%s/results',dir2)
+
+filein_trp = sprintf('%s/mbml_trp1.csv',dir_mb)
+mx2 = read.csv(filein_trp)
+
+
+edataNames = c('Tryptophan','Kynurenine','Kynurenic.Acid','Neopterin','Serotonin', 'KYN_TRP_Ratio', 'KA_KYN_Ratio')
+
+
+dataset = 'Trp'
+
+
+
+
+
+
+cvrtNames = 'Visit'
+randomName = 'Subject'
+
+
+  
+  cdataNames = c(paste("wunifrac.PC.",1:4,sep='')
+                  ,"alphadiv.PC.1","alphadiv.PC.2")
+  
+
+  dataName = sprintf('%s_vs_div',dataset)
+
+  pairwise_association_test_lmm(mx2, cdataNames, edataNames, randomName, cvrtNames,dataName = 'test', dir_out = dir_out)
+
+```
+
+
+
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=3*4, fig.height=3*5}
+  
+  timeName = 'Visit'
+  
+  par(mfrow=c(5,4))
+  plot_longitudinal(mx2,cdataNames,edataNames, timeName,dataName = dataName, dir_out = dir_out)
+
+
+```
+
+
+
+
+### Change of Tryptophan of three visits as function of V1/V2 of beta and alpha diversity of microbiome
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=2.5*4, fig.height=2.5*6}
+
+setwd(dir1)
+
+
+library(knitr)
+library("lme4")
+library(lmerTest)
+#library(survival)
+#library(coxme)
+
+
+
+source('data_analysis_MBML.R')
+
+
+#dir_beha = 'behaviordata'
+dir_mb = '../processed_data'
+dir_raw = '../raw_data'
+dir_cvrt = sprintf('%s/cvrt',dir_raw)
+dir_out = sprintf('%s/results',dir2)
+
+
+filein_trp = sprintf('%s/mbml_trp1.csv',dir_mb)
+mx2 = read.csv(filein_trp)
+
+
+edataNames = c('Tryptophan','Kynurenine','Kynurenic.Acid','Neopterin','Serotonin', 'KYN_TRP_Ratio', 'KA_KYN_Ratio')
+
+
+dataset = 'Trp'
+
+
+
+
+
+
+cvrtNames = 'Visit'
+randomName = 'Subject'
+
+
+  
+  cdataNames = c(paste("wunifrac.PC.",1:4,sep='')
+                  ,"alphadiv.PC.1","alphadiv.PC.2")
+  
+  
+
+  
+  
+  
+  library(reshape2)
+  #test1 = dcast(melt(mx2,id.vars=c('Subject','Visit')), Subject~variable+Visit)
+  
+  ## reshape the responses data to wide format
+  mx2_long = reshape(mx2, idvar='Subject', timevar = 'Visit', direction='wide')
+  
+  edataNames_diff21 = c()
+  edataNames_diff32 = c()
+  
+  # calculate the diff of Trp pathway variables
+  for(edataName in edataNames){
+    edataName_visits = paste(edataName,c('V1','V2','V3'),sep='.')
+    edataName_diff21 = paste(edataName,'V21',sep='.')
+    edataName_diff32 = paste(edataName,'V32',sep='.')
+    mx2_long[[edataName_diff21]] = mx2_long[, edataName_visits[2]] - mx2_long[, edataName_visits[1]]
+    mx2_long[[edataName_diff32]] = mx2_long[, edataName_visits[3]] - mx2_long[, edataName_visits[2]]
+    
+    edataNames_diff21 = c(edataNames_diff21, edataName_diff21)
+    edataNames_diff32 = c(edataNames_diff32, edataName_diff32)
+
+  }
+  
+  # association between div v1 and change of Trp
+  dataName = sprintf('%s_diff_vs_div_v1',dataset)
+  cdataNames_v1 = paste(cdataNames, 'V1',sep='.')
+
+  pairwise_association_test(mx2_long, cdataNames_v1, c(edataNames_diff21, edataNames_diff32),dataName = dataName, dir_out = dir_out)
+  
+  
+    # association between div v2 and change of Trp
+  dataName = sprintf('%s_diff_vs_div_v2',dataset)
+  cdataNames_v1 = paste(cdataNames, 'V2',sep='.')
+
+  pairwise_association_test(mx2_long, cdataNames_v1, c(edataNames_diff21, edataNames_diff32),dataName = dataName, dir_out = dir_out)
+
+```
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=3*4, fig.height=3*5}
+  
+  timeName = 'Visit'
+  
+  par(mfrow=c(5,4))
+  plot_longitudinal(mx2,cdataNames,edataNames, timeName,dataName = dataName, dir_out = dir_out)
+
+
+```
+
+
+
+
+
+
+\newpage
+
+### Mood assessment as function of Tryptophan or diversity
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=3*4, fig.height=3*6}
+
+
+
+setwd(dir1)
+
+
+library(knitr)
+library("lme4")
+#library(survival)
+#library(coxme)
+
+
+
+source('data_analysis_MBML.R')
+
+
+#dir_beha = 'behaviordata'
+dir_mb = '../processed_data'
+dir_raw = '../raw_data'
+dir_cvrt = sprintf('%s/cvrt',dir_raw)
+dir_out = sprintf('%s/results',dir2)
+
+filein_trp = sprintf('%s/mbml_trp1.csv',dir_mb)
+mx2 = read.csv(filein_trp)
+
+
+cdataNames_trp = c('Tryptophan','Kynurenine','Kynurenic.Acid','Neopterin','Serotonin', 'KYN_TRP_Ratio', 'KA_KYN_Ratio')
+
+cdataNames_div = c(paste("wunifrac.PC.",1:4,sep=''),"alphadiv.PC.1","alphadiv.PC.2")
+  
+
+cdataNames = c(cdataNames_trp, cdataNames_div)
+  
+edataNames = c('GAD','EPSD')
+
+dataset = 'Mood'
+
+
+
+
+
+
+cvrtNames = 'Visit'
+randomName = 'Subject'
+
+
+  
+
+  dataName = sprintf('%s_vs_trp_div',dataset)
+
+  pairwise_association_test_lmm(mx2, cdataNames, edataNames, randomName, cvrtNames,dataName = dataName, dir_out = dir_out)
+  
+```
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=3*4, fig.height=3*5}
+
+  timeName = 'Visit'
+  
+  par(mfrow=c(5,4))
+  plot_longitudinal(mx2,cdataNames,edataNames, timeName,dataName = dataName, dir_out = dir_out)
+
+
+```
+
+
+
+
+
+
+### Change of mood of three visits as function of V1/V2 of diversity and Tryptophan
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=2.5*4, fig.height=2.5*6}
+
+
+
+setwd(dir1)
+
+
+library(knitr)
+library("lme4")
+#library(survival)
+#library(coxme)
+
+
+
+source('data_analysis_MBML.R')
+
+
+#dir_beha = 'behaviordata'
+dir_mb = '../processed_data'
+dir_raw = '../raw_data'
+dir_cvrt = sprintf('%s/cvrt',dir_raw)
+dir_out = sprintf('%s/results',dir2)
+
+filein_trp = sprintf('%s/mbml_trp1.csv',dir_mb)
+mx2 = read.csv(filein_trp)
+
+
+edataNames = c('GAD','EPSD')
+
+
+
+
+dataset = 'mood'
+
+
+
+
+
+
+cvrtNames = 'Visit'
+randomName = 'Subject'
+
+
+  
+cdataNames_div = c(paste("wunifrac.PC.",1:4,sep=''),"alphadiv.PC.1","alphadiv.PC.2")
+  
+
+  cdataNames_trp = c('Tryptophan','Kynurenine','Kynurenic.Acid','Neopterin','Serotonin', 'KYN_TRP_Ratio', 'KA_KYN_Ratio')
+  
+  cdataNames = c(cdataNames_div, cdataNames_trp)
+  
+  
+  library(reshape2)
+  #test1 = dcast(melt(mx2,id.vars=c('Subject','Visit')), Subject~variable+Visit)
+  
+  ## reshape the responses data to wide format
+  mx2_long = reshape(mx2, idvar='Subject', timevar = 'Visit', direction='wide')
+  
+  edataNames_diff21 = c()
+  edataNames_diff32 = c()
+  
+  # calculate the diff of Trp pathway variables
+  for(edataName in edataNames){
+    edataName_visits = paste(edataName,c('V1','V2','V3'),sep='.')
+    edataName_diff21 = paste(edataName,'V21',sep='.')
+    edataName_diff32 = paste(edataName,'V32',sep='.')
+    mx2_long[[edataName_diff21]] = mx2_long[, edataName_visits[2]] - mx2_long[, edataName_visits[1]]
+    mx2_long[[edataName_diff32]] = mx2_long[, edataName_visits[3]] - mx2_long[, edataName_visits[2]]
+    
+    edataNames_diff21 = c(edataNames_diff21, edataName_diff21)
+    edataNames_diff32 = c(edataNames_diff32, edataName_diff32)
+
+  }
+  
+  # association between div v1 and change of Trp
+  dataName = sprintf('%s_diff_vs_div_trp_v1',dataset)
+  cdataNames_v1 = paste(cdataNames, 'V1',sep='.')
+
+  pairwise_association_test(mx2_long, cdataNames_v1, c(edataNames_diff21, edataNames_diff32),dataName = dataName, dir_out = dir_out)
+  
+  
+    # association between div v2 and change of Trp
+  dataName = sprintf('%s_diff_vs_div_trp_v2',dataset)
+  cdataNames_v1 = paste(cdataNames, 'V2',sep='.')
+
+  pairwise_association_test(mx2_long, cdataNames_v1, c(edataNames_diff21, edataNames_diff32),dataName = dataName, dir_out = dir_out)
+
+```
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=3*4, fig.height=3*5}
+  
+  timeName = 'Visit'
+  
+  par(mfrow=c(5,4))
+  plot_longitudinal(mx2,cdataNames,edataNames, timeName,dataName = dataName, dir_out = dir_out)
+
+
+```
+
+
+
+
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=3*4, fig.height=3*5}
+
+### combine result to one Excel file
+
+#library(xlsx)
+
+
+#setwd(dir1)
+#dir_out = sprintf('%s/results',dir2)
+
+## first, cluster analysis
+#fileout_xls = sprintf('%s/association_analysis_combine_v1.1.xls',dir_out)
+#typeNames = c('pval','beta')
+
+
+#Names = c('Trp_vs_div','Mood_vs_trp_div','Trp_diff_vs_div_v1','Trp_diff_vs_div_v2','mood_diff_vs_div_trp_v1','mood_diff_vs_div_trp_v2')
+
+#dataName = c('Trp_vs_div','Mood_vs_trp_div','Trp_diff_vs_v1','Trp_diff_vs_v2','mood_diff_vs_v1','mood_diff_vs_v2')
+
+#flag1 = FALSE
+
+#for(i in 1:length(Names)){
+#  for(j in 1:length(typeNames)) {
+#  
+#		dataset =  paste(typeNames[j],'_',Names[i],sep='')
+#		filein = sprintf('%s/%s_%s.csv',dir_out,typeNames[j], Names[i])
+#		info1 = read.csv(filein,header=TRUE,strings=FALSE)
+#		#info1 = t(info1)
+#		write.xlsx(info1,fileout_xls,sheetName=dataset,row.names=FALSE,append=flag1)
+#		flag1 = TRUE
+#  }
+#}
+
+
+
+
+```
+
+
+
+
+
+
+
+
