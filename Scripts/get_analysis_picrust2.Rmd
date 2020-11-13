@@ -1,0 +1,1022 @@
+---
+title: "get_analysis_Picrust2"
+author: "Wanting Jin"
+date: "6/3/2020"
+
+  output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+
+
+# Outline of the analysis
+* PCA analysis of the PICRUSt2 predictions
+* QC procedure of the PICRUSt2 predoctions
+* Linear mixed regresion among PICRUST2 predictions and metabolites
+** Bile Acids of three visits as function of PCs of PICRUSt2 predictions
+** Bile Acids/Tryptophan of three visits as function of PICRUSt2 predictions
+** PICRUSt2 predictions of three visits as function of diversity
+** Bile Acids/Trptophan of three visits as function of log transformed PICRUSt2 predictions(after QC)
+
+# PCA analysis of the PICRUSt2 predictions
+```{r echo=FALSE, message=FALSE, cache=FALSE, include=FALSE, results='hide', warnings=FALSE}
+### load data file Microbiome diversity raw file
+dir1 = 'E:/Github/mbml/Scripts'
+dir2 = 'E:/Wanting/mbml/'
+
+
+#library(readxl)
+library(tidyr)
+library(stringr)
+library(knitr)
+library(dplyr)
+library("lme4")
+library(lmerTest)
+library(factoextra)
+
+library(magrittr)
+library(qwraps2)
+
+dataset = 'mom_mb'
+
+
+setwd(dir1)
+source('data_analysis_MBML.R')
+
+dir_mb = '../processed_data'
+
+
+filein_ba = sprintf('%s/imputed_bilacid_log.csv',dir_mb)
+dat_ba = read.csv(filein_ba)
+filein_trp = sprintf('%s/mbml_trp.csv',dir_mb)
+dat_trp = read.csv(filein_trp)
+filein_div = sprintf('%s/qiime2_diversity.csv',dir_mb)
+dat_div = read.csv(filein_div)
+mx2 = merge(dat_trp[,c(1:5,34:47)],dat_ba,by=c('Subject','Visit'),sort = FALSE,all=TRUE)
+#mx2 = merge(mx2,dat_div,by='barcode')
+setwd(dir2)
+dir_mb = './Data/processed_data'
+dir_raw = './Data/otus/qiime2/picrust2'
+
+dir_out = sprintf('%s/results/qiime2',dir2)
+
+filein_EC = sprintf('%s/EC_metagenome_out/pred_metagenome_unstrat_descrip.tsv',dir_raw)
+filein_KO = sprintf('%s/KO_metagenome_out/pred_metagenome_unstrat_descrip.tsv',dir_raw)
+filein_path = sprintf('%s/pathways_out/path_abun_unstrat_descrip.tsv',dir_raw)
+dat_EC = read.table(filein_EC,sep = '\t',header=TRUE)
+dat_KO = read.table(filein_KO,sep = '\t',header=TRUE)
+dat_path = read.table(filein_path,sep = '\t',header=TRUE)
+
+
+
+dat_EC1 = t(dat_EC[,3:89])
+EC_labels =  dat_EC[,1:2]
+dat_KO1 = t(dat_KO[,3:89])
+KO_labels =  dat_KO[,1:2]
+dat_path1 = t(dat_path[,3:89])
+path_labels =  dat_path[,1:2]
+barcode = rownames(dat_EC1)
+barcode=substr(barcode,2,100)
+
+colnames(dat_EC1)= EC_labels[,1]
+dat_EC1 = cbind(barcode,dat_EC1)
+rownames(dat_EC1) = c()
+dat_EC2 = merge(dat_trp[,1:5],dat_EC1,by = 'barcode')
+colnames(dat_KO1)= KO_labels[,1]
+dat_KO1 = cbind(barcode,dat_KO1)
+rownames(dat_KO1) = c()
+dat_KO2 = merge(dat_trp[,1:5],dat_KO1,by = 'barcode')
+colnames(dat_path1)= path_labels[,1]
+dat_path1 = cbind(barcode,dat_path1)
+rownames(dat_path1) = c()
+dat_path2 = merge(dat_trp[,1:5],dat_path1,by = 'barcode')
+
+fileout_path = sprintf('%s/path_predictions.csv',dir_mb)
+#write.csv(dat_KO2,fileout_KO,row.names = FALSE)
+#write.csv(dat_path2,fileout_path,row.names = FALSE)
+
+
+#PCA of EC metagenome prediction
+
+pca_EC <- prcomp(dat_EC1)#PCA of 4 alpha-diversity data by princomp function
+
+fviz_eig(pca_EC,addlabels = T)#Screenplot by using factoextra package
+
+#Plot of accumulated percentage of explained variances
+pca_sum <- summary(pca_KO,loadings = T)
+pca_sum$pva= pca_sum$sdev^2/sum(pca_sum$sdev^2)
+for(i in 1:87){
+  pca_sum$cpv[i] <- sum(pca_sum$pva[1:i])
+  pca_sum$comp[i] = i;
+}
+pca_var <- data.frame(PC = pca_sum$comp, pvar = pca_sum$pva, cpvar = pca_sum$cpv)
+screep <-ggplot(data = pca_var,aes(x = PC,y = cpvar))+
+  geom_point()+
+  geom_line()+
+  geom_line(y = 0.95,linetype = 2)+
+  geom_text(y = 0.96, x = 1,label = "0.95")+
+  ylim(0.5,1)+
+  labs(x= "PC", y = "Cumulative Percent of Variance")
+screep
+
+EC_PC <- predict(pca_EC)
+EC_PC = EC_PC[,1:5]
+colnames(EC_PC) <- c("EC.PC.1","EC.PC.2","EC.PC.3","EC.PC.4","EC.PC.5")
+EC_PC <- cbind(barcode,EC_PC)
+#fileout_div_cvrt = sprintf('%s/EC_PC1.csv',dir_mb)
+
+
+
+#PCA of KO metagenome prediction
+
+pca_KO <- prcomp(dat_KO1)#PCA of 4 alpha-diversity data by princomp function
+
+fviz_eig(pca_KO,addlabels = T)#Screenplot by using factoextra package
+
+#Plot of accumulated percentage of explained variances
+pca_sum <- summary(pca_KO,loadings = T)
+pca_sum$pva= pca_sum$sdev^2/sum(pca_sum$sdev^2)
+for(i in 1:87){
+  pca_sum$cpv[i] <- sum(pca_sum$pva[1:i])
+  pca_sum$comp[i] = i;
+}
+pca_var <- data.frame(PC = pca_sum$comp, pvar = pca_sum$pva, cpvar = pca_sum$cpv)
+screep <-ggplot(data = pca_var,aes(x = PC,y = cpvar))+
+  geom_point()+
+  geom_line()+
+  geom_line(y = 0.95,linetype = 2)+
+  geom_text(y = 0.96, x = 1,label = "0.95")+
+  ylim(0.5,1)+
+  labs(x= "PC", y = "Cumulative Percent of Variance")
+screep
+
+EC_KO <- predict(pca_KO)
+EC_KO = EC_KO[,1:6]
+colnames(EC_KO) <- c("KO.PC.1","KO.PC.2","KO.PC.3","KO.PC.4","KO.PC.5","KO.PC.6")
+EC_KO<- cbind(barcode,EC_KO)
+fileout_KO = sprintf('%s/EC_KO.csv',dir_mb)
+setwd(dir2)
+#write.csv(EC_KO,fileout_KO,row.names = FALSE)
+
+
+#PCA of path metagenome prediction
+na_flag <- apply(is.na(dat_path1),2,sum)
+dat_path2 = dat_path1[,which(na_flag ==0)]
+pca_path <- prcomp(dat_path2)#PCA of 4 alpha-diversity data by princomp function
+
+fviz_eig(pca_path,addlabels = T)#Screenplot by using factoextra package
+
+#Plot of accumulated percentage of explained variances
+pca_sum <- summary(pca_path,loadings = T)
+pca_sum$pva= pca_sum$sdev^2/sum(pca_sum$sdev^2)
+for(i in 1:87){
+  pca_sum$cpv[i] <- sum(pca_sum$pva[1:i])
+  pca_sum$comp[i] = i;
+}
+pca_var <- data.frame(PC = pca_sum$comp, pvar = pca_sum$pva, cpvar = pca_sum$cpv)
+screep <-ggplot(data = pca_var,aes(x = PC,y = cpvar))+
+  geom_point()+
+  geom_line()+
+  geom_line(y = 0.95,linetype = 2)+
+  geom_text(y = 0.96, x = 1,label = "0.95")+
+  ylim(0.5,1)+
+  labs(x= "PC", y = "Cumulative Percent of Variance")
+screep
+
+path_PC<- predict(pca_path)
+path_PC = path_PC[,1:5]
+colnames(path_PC) <- c("path.PC.1","path.PC.2","path.PC.3","path.PC.4","path.PC.5")
+path_PC<- cbind(barcode,path_PC)
+fileout_path = sprintf('%s/path_PC.csv',dir_mb)
+setwd(dir2)
+#write.csv(path_PC,fileout_path,row.names = FALSE)
+
+```
+
+
+## QC procedure of the PICRUSt2 predictions
+```{r echo=FALSE, message=FALSE, cache=FALSE, include=FALSE, results='hide', warnings=FALSE}
+dir1 = 'E:/Github/mbml/Scripts'
+dir2 = 'E:/Wanting/mbml/'
+
+
+#library(readxl)
+library(tidyr)
+library(stringr)
+library(knitr)
+library(dplyr)
+library("lme4")
+library(lmerTest)
+library(factoextra)
+
+library(magrittr)
+library(qwraps2)
+
+
+## read the data of Bile Acids, Trptophan and diversity
+setwd(dir1)
+source('data_analysis_MBML.R')
+
+## read the output from Picrust2
+setwd(dir2)
+dir_mb = './Data/processed_data'
+dir_raw = './Data/otus/qiime2/picrust2'
+dir_out = sprintf('%s/results/qiime2/PICRUSt2/significant',dir2)
+
+filein_EC = sprintf('%s/EC_predictions.csv',dir_mb)
+dat_EC = read.csv(filein_EC,header = T)
+filein_KO = sprintf('%s/KO_predictions.csv',dir_mb)
+dat_KO = read.csv(filein_KO,header = T)
+filein_path = sprintf('%s/path_predictions.csv',dir_mb)
+dat_path = read.csv(filein_path,header = T)
+
+## QC procedure of the PICRUSt2 predictions
+### QC procedure for pathway
+x1 = dat_path[,-c(1:5)]  #350 pathway predictions
+filter.index1 <- apply(x1,2,function(X){sum(X>0)>0.2*length(X)})
+filter.index2 <- apply(x1,2,function(X){quantile(X,0.9)>0.005})
+taxa.filter <- x1[,filter.index1 & filter.index2] #302 after QC
+path_QC = cbind(dat_path[,1:5], taxa.filter)
+
+###QC procedure for EC
+x1 = dat_EC[,-c(1:5)]  #691 pathway predictions
+filter.index1 <- apply(x1,2,function(X){sum(X>0)>0.2*length(X)})
+filter.index2 <- apply(x1,2,function(X){quantile(X,0.9)>0.005})
+taxa.filter <- x1[,filter.index1 & filter.index2] #545 after QC
+EC_QC = cbind(dat_EC[,1:5], taxa.filter)
+
+###QC procedure for KO
+x1 = dat_KO[,-c(1:5)]  #2519 pathway predictions
+filter.index1 <- apply(x1,2,function(X){sum(X>0)>0.2*length(X)})
+filter.index2 <- apply(x1,2,function(X){quantile(X,0.9)>0.005})
+taxa.filter <- x1[,filter.index1 & filter.index2] #1851 after QC
+KO_QC = cbind(dat_EC[,1:5], taxa.filter)
+
+#setwd(dir2)
+fileout_data = sprintf('%s/path_QC.csv',dir_mb)
+write.csv(path_QC,fileout_data, row.names = FALSE)
+fileout_data = sprintf('%s/EC_QC.csv',dir_mb)
+write.csv(EC_QC,fileout_data, row.names = FALSE)
+fileout_data = sprintf('%s/KO_QC.csv',dir_mb)
+write.csv(KO_QC,fileout_data, row.names = FALSE)
+
+
+
+```
+
+
+
+
+
+### Bile Acids of three visits as function of PCs of EC/KO/pathway predictions
+
+```{r echo=FALSE, message=FALSE, cache=FALSE, include=FALSE, results='hide', warnings=FALSE}
+dir1 = 'E:/Github/mbml/Scripts'
+dir2 = 'E:/Wanting/mbml/'
+
+
+#library(readxl)
+library(tidyr)
+library(stringr)
+library(knitr)
+library(dplyr)
+library("lme4")
+library(lmerTest)
+library(factoextra)
+
+library(magrittr)
+library(qwraps2)
+
+dataset = 'mom_mb'
+
+## read the data of Bile Acids, Trptophan and diversity
+setwd(dir1)
+source('data_analysis_MBML.R')
+dir_mb = '../processed_data'
+
+#filein_ba = sprintf('%s/imputed_bilacid_log.csv',dir_mb)
+#dat_ba = read.csv(filein_ba)
+#filein_trp = sprintf('%s/mbml_trp1.csv',dir_mb)
+#dat_trp = read.csv(filein_trp)
+#filein_div = sprintf('%s/qiime2_diversity.csv',dir_mb)
+#dat_div = read.csv(filein_div)
+
+#mx2 = merge(dat_trp[,c(1:5,26:47)],dat_ba,by=c('Subject','Visit'),sort = FALSE,all=TRUE)
+#mx2 = merge(mx2,dat_div,by='barcode')
+
+## read the output from Picrust2
+setwd(dir2)
+dir_mb = './Data/processed_data'
+dir_raw = './Data/otus/qiime2/picrust2'
+dir_out = sprintf('%s/results/qiime2',dir2)
+
+
+
+filein_EC = sprintf('%s/EC_PC.csv',dir_mb)
+EC_PC = read.csv(filein_EC,header = T)
+filein_KO = sprintf('%s/KO_PC.csv',dir_mb)
+KO_PC = read.csv(filein_KO,header = T)
+filein_path = sprintf('%s/path_PC.csv',dir_mb)
+path_PC = read.csv(filein_path,header = T)
+
+
+
+
+
+
+
+edataNames = c('TaMCA','THCA','GHCA','TUDCA'
+               ,'GUDCA','TCA','GCA'
+               ,'CA','UDCA','TCDCA','GCDCA','TDCA'
+               ,'GDCA','CDCA','DCA','GLCA','bMCA')
+
+dataset = 'BA'
+
+cvrtNames = 'Visit'
+randomName = 'Subject'
+
+
+cdataNames = c("KO.PC.1","KO.PC.2","KO.PC.3","KO.PC.4","KO.PC.5")
+mx3 = merge(mx2,KO_PC, by = 'barcode')
+dataName = sprintf('%s_vs_KO',dataset)
+pairwise_association_test_lmm(mx3, cdataNames, edataNames, randomName, cvrtNames,dataName = dataName, dir_out = dir_out)
+
+cdataNames = c("path.PC.1","path.PC.2","path.PC.3","path.PC.4","path.PC.5")
+mx3 = merge(mx2,path_PC, by = 'barcode')
+dataName = sprintf('%s_vs_path',dataset)
+pairwise_association_test_lmm(mx3, cdataNames, edataNames, randomName, cvrtNames,dataName = dataName, dir_out = dir_out)
+```
+
+
+
+### Bile Acids/Trptophan of three visits as function of EC/KO/pathway predictions(after QC)
+
+```{r echo=FALSE, message=FALSE, cache=FALSE, include=FALSE, results='hide', warnings=FALSE}
+dir1 = 'E:/Github/mbml/Scripts'
+dir2 = 'E:/Wanting/mbml/'
+
+
+#library(readxl)
+library(tidyr)
+library(stringr)
+library(knitr)
+library(dplyr)
+library("lme4") 
+library(lmerTest)
+library(factoextra)
+
+library(magrittr)
+library(qwraps2)
+
+
+## read the data of Bile Acids, Trptophan and diversity
+setwd(dir1)
+source('data_analysis_MBML.R')
+dir_mb = '../processed_data'
+
+filein_ba = sprintf('%s/imputed_bilacid_log.csv',dir_mb)
+dat_ba = read.csv(filein_ba)
+filein_trp = sprintf('%s/mbml_trp.csv',dir_mb)
+dat_trp = read.csv(filein_trp)
+filein_div = sprintf('%s/qiime2_diversity.csv',dir_mb)
+dat_div = read.csv(filein_div)
+
+mx2 = merge(dat_trp[,c(1:5,35:47)],dat_ba,by=c('Subject','Visit'),sort = FALSE,all=TRUE)
+#mx2 = merge(mx2,dat_div,by='barcode')
+
+## read the output from Picrust2
+setwd(dir2)
+dir_mb = './Data/processed_data'
+dir_raw = './Data/otus/qiime2/picrust2'
+dir_out = sprintf('%s/results/qiime2/PICRUSt2/QC/new',dir2)
+
+filein_EC = sprintf('%s/EC_QC.csv',dir_mb)
+dat_EC = read.csv(filein_EC,header = T)
+filein_KO = sprintf('%s/KO_QC.csv',dir_mb)
+dat_KO = read.csv(filein_KO,header = T)
+filein_path = sprintf('%s/path_QC.csv',dir_mb)
+dat_path = read.csv(filein_path,header = T)
+
+
+
+
+edataNames = c('Tryptophan','Kynurenine','Kynurenic.Acid','Neopterin','Serotonin', 'KYN_TRP_Ratio', 'KA_KYN_Ratio')
+dataset = 'Trp'
+cvrtNames = 'Visit'
+randomName = 'Subject'
+
+
+#cdataNames = as.character(path_labels[,1])
+#colnames(dat_path1) = cdataNames
+#barcode = rownames(dat_KO1)
+#barcode = substr(barcode,2,10)
+#rownames(dat_path1)=c()
+#dat_path2 = as.data.frame(cbind(barcode,dat_path1))
+#fileout_path = sprintf('%s/path_predictions.csv',dir_mb)
+#setwd(dir2)
+#write.csv(dat_path2,fileout_path,row.names = FALSE)
+
+##Association analysis by linear mix regression model
+### EC vs Trp 
+mx4 = merge(dat_trp,dat_EC[,-c(2:5)], by = 'barcode')
+id_rm = c(6,7)
+mx4 = mx4[!mx4$Subject %in% id_rm,]
+EC_scale = as.data.frame(scale(as.matrix(mx4[,48:592])))
+mx4[,-(1:47)]=EC_scale
+na_flag <- apply(is.na(mx4),2,sum)
+mx4=mx4[,which(na_flag == 0)]
+
+
+dataName = sprintf('%s_vs_EC',dataset)
+cdataNames = colnames(mx4[,32:576])
+pairwise_association_test_lmm(mx4, cdataNames, edataNames, randomName, cvrtNames,dataName = dataName, dir_out = dir_out)
+
+### EC vs BA
+#edataNames = c('TaMCA','THCA','GHCA','TUDCA'
+#               ,'GUDCA','TCA','GCA'
+#               ,'CA','UDCA','TCDCA','GCDCA','TDCA'
+#               ,'GDCA','CDCA','DCA','GLCA','bMCA')
+edataNames = c('TUDCA','GUDCA','CA')
+
+dataset = 'BA'
+mx4 = merge(mx2,dat_EC[,-(2:5)], by = 'barcode')
+EC_scale = as.data.frame(scale(as.matrix(mx4[,50:594])))
+mx4[,-(1:49)]=EC_scale
+na_flag <- apply(is.na(mx4),2,sum)
+mx4=mx4[,which(na_flag == 0)]
+
+
+dataName = sprintf('%s_vs_EC',dataset)
+cdataNames = colnames(mx4[,39:583])
+pairwise_association_test_lmm(mx4, cdataNames, edataNames, randomName, cvrtNames,dataName = dataName, dir_out = dir_out)
+
+
+### KO vs Trp
+mx4 = merge(mx2,dat_KO, by = 'barcode')
+id_rm = c(6,7)
+mx4 = mx4[!mx4$Subject %in% id_rm,]
+KO_scale = as.data.frame(scale(as.matrix(mx4[,38:2556])))
+mx4[,-(1:37)]=KO_scale
+na_flag <- apply(is.na(mx4),2,sum)
+mx4=mx4[,which(na_flag == 0)]
+
+
+dataName = sprintf('%s_vs_KO',dataset)
+cdataNames = colnames(mx4[,36:2373])
+pairwise_association_test_lmm(mx4, cdataNames, edataNames, randomName, cvrtNames,dataName = dataName, dir_out = dir_out)
+
+### path vs Trp
+mx4 = merge(dat_trp,dat_path[,-c(2:5)], by = 'barcode')
+id_rm = c(6,7)
+mx4 = mx4[!mx4$Subject %in% id_rm,]
+path_scale = as.data.frame(scale(as.matrix(mx4[,48:349])))
+mx4[,-(1:47)]=path_scale
+na_flag <- apply(is.na(mx4),2,sum)
+mx4=mx4[,which(na_flag == 0)]
+dataset = 'Trp'
+dataName = sprintf('%s_vs_path',dataset)
+cdataNames = colnames(mx4[,32:333])
+
+pairwise_association_test_lmm(mx4, cdataNames, edataNames, randomName, cvrtNames,dataName = dataName, dir_out = dir_out)
+
+
+##path vs Mood
+path_scale = as.data.frame(scale(as.matrix(dat_path)))
+dat_path[,-1]=path_scale
+na_flag <- apply(is.na(dat_path),2,sum)
+dat_path=dat_path[,which(na_flag == 0)]
+mx4 = merge(mx2,dat_path, by = 'barcode')
+mx4 = mx4[-79,]
+dataset = 'Mood'
+dataName = sprintf('%s_vs_path',dataset)
+cdataNames = colnames(dat_path[,-1])
+edataNames = c('GAD','EPSD')
+pairwise_association_test_lmm(mx4, cdataNames, edataNames, randomName, cvrtNames,dataName = dataName, dir_out = dir_out)
+
+
+
+##path vs BA
+
+mx4 = merge(mx2,dat_path[,-c(2:5)], by = 'barcode')
+path_scale = as.data.frame(scale(as.matrix(mx4[,50:351])))
+mx4[,-(1:49)]=path_scale
+na_flag <- apply(is.na(mx4),2,sum)
+mx4=mx4[,which(na_flag == 0)]
+
+dataset = 'BA'
+dataName = sprintf('%s_vs_path_test',dataset)
+cdataNames = colnames(mx4[,c(39:340)])
+edataNames =  c('TUDCA','GUDCA','CA')
+
+pairwise_association_test_lmm(mx4, cdataNames, edataNames, randomName, cvrtNames,dataName = dataName, dir_out = dir_out)
+
+###BA vs KO
+mx4 = merge(dat_trp,dat_KO, by = 'barcode')
+KO_scale = as.data.frame(scale(as.matrix(mx4[,52:2570])))
+mx4[,-(1:51)]=KO_scale
+na_flag <- apply(is.na(mx4),2,sum)
+mx4=mx4[,which(na_flag == 0)]
+
+dataset = 'BA'
+dataName = sprintf('%s_vs_KO',dataset)
+cdataNames = colnames(mx4[,37:2376])
+edataNames = c('TaMCA','THCA','GHCA','TUDCA'
+               ,'GUDCA','TCA','GCA'
+               ,'CA','UDCA','TCDCA','GCDCA','TDCA'
+               ,'GDCA','CDCA','DCA','GLCA','bMCA')
+pairwise_association_test_lmm(mx4, cdataNames, edataNames, randomName, cvrtNames,dataName = dataName, dir_out = dir_out)
+
+
+###Trp vs KO
+mx4 = merge(dat_trp,dat_KO, by = 'barcode')
+KO_scale = as.data.frame(scale(as.matrix(mx4[,52:2566])))
+mx4[,-(1:51)]=KO_scale
+na_flag <- apply(is.na(mx4),2,sum)
+mx4=mx4[,which(na_flag == 0)]
+
+dataset = 'BA'
+dataName = sprintf('%s_vs_KO',dataset)
+cdataNames = colnames(mx4[,37:2376])
+edataNames = c('TaMCA','THCA','GHCA','TUDCA'
+               ,'GUDCA','TCA','GCA'
+               ,'CA','UDCA','TCDCA','GCDCA','TDCA'
+               ,'GDCA','CDCA','DCA','GLCA','bMCA')
+pairwise_association_test_lmm(mx4, cdataNames, edataNames, randomName, cvrtNames,dataName = dataName, dir_out = dir_out)
+
+
+
+
+###Plots
+edataNames = c('P161.PWY','HOMOSER.METSYN.PWY','PWY.5188','PWY.6471','MET.SAM.PWY','HEME.BIOSYNTHESIS.II','P4.PWY','PWY.5347','DAPLYSINESYN.PWY','PWY.5189','FAO.PWY')
+
+#edataNames = 'Neopterin'
+cdataNames = 'wunifrac.PC.1'
+timeName = 'Visit'
+plot_longitudinal(mx4,cdataNames,edataNames, timeName,dataName = dataName, dir_out = dir_out)
+
+
+```
+
+
+
+###  EC/KO/pathway predictions of three visits as function of diversity
+
+```{r echo=FALSE, message=FALSE, cache=FALSE, include=FALSE, results='hide', warnings=FALSE}
+dir1 = 'E:/Github/mbml/Scripts'
+dir2 = 'E:/Wanting/mbml/'
+
+
+#library(readxl)
+library(tidyr)
+library(stringr)
+library(knitr)
+library(dplyr)
+library("lme4")
+library(lmerTest)
+library(factoextra)
+
+library(magrittr)
+library(qwraps2)
+
+
+## read the data of Bile Acids, Trptophan and diversity
+setwd(dir1)
+source('data_analysis_MBML.R')
+dir_mb = '../processed_data'
+
+filein_ba = sprintf('%s/imputed_bilacid_log.csv',dir_mb)
+dat_ba = read.csv(filein_ba)
+filein_trp = sprintf('%s/mbml_trp.csv',dir_mb)
+dat_trp = read.csv(filein_trp)
+filein_div = sprintf('%s/qiime2_diversity.csv',dir_mb)
+dat_div = read.csv(filein_div)
+
+mx2 = merge(dat_trp[,c(1:5,35:47)],dat_div,by='barcode',sort = FALSE,all.y =TRUE)
+
+## read the output from Picrust2
+setwd(dir2)
+dir_mb = './Data/processed_data'
+dir_raw = './Data/otus/qiime2/picrust2'
+dir_out = sprintf('%s/results/qiime2/PICRUSt2',dir2)
+
+filein_EC = sprintf('%s/EC_predictions.csv',dir_mb)
+dat_EC = read.csv(filein_EC,header = T)
+filein_KO = sprintf('%s/KO_predictions.csv',dir_mb)
+dat_KO = read.csv(filein_KO,header = T)
+filein_path = sprintf('%s/path_predictions.csv',dir_mb)
+dat_path = read.csv(filein_path,header = T)
+
+
+##Association analysis by linear mix regression model
+### EC vs Div
+cdataNames = c(paste("wunifrac.PC.",1:4,sep='')
+                  ,"pielou_e","observed_otus","faith_pd","shannon")
+dataset = 'EC'
+cvrtNames = 'Visit'
+randomName = 'Subject'
+
+mx4 = merge(mx2,dat_EC, by = 'barcode')
+EC_scale = as.data.frame(scale(as.matrix(mx4[,31:721])))
+mx4[,-(1:30)]=EC_scale
+na_flag <- apply(is.na(mx4),2,sum)
+mx4=mx4[,which(na_flag == 0)]
+
+
+dataName = sprintf('%s_vs_div',dataset)
+edataNames = colnames(mx4[,31:679])
+pairwise_association_test_lmm(mx4, cdataNames, edataNames, randomName, cvrtNames,dataName = dataName, dir_out = dir_out)
+
+###KO vs div
+dataset = 'KO'
+cvrtNames = 'Visit'
+randomName = 'Subject'
+
+mx4 = merge(mx2,dat_KO, by = 'barcode')
+KO_scale = as.data.frame(scale(as.matrix(mx4[,31:2549])))
+mx4[,-(1:30)]=KO_scale
+na_flag <- apply(is.na(mx4),2,sum)
+mx4=mx4[,which(na_flag == 0)]
+
+
+dataName = sprintf('%s_vs_div',dataset)
+edataNames = colnames(mx4[,20:2361])
+pairwise_association_test_lmm(mx4, cdataNames, edataNames, randomName, cvrtNames,dataName = dataName, dir_out = dir_out)
+
+
+###path vs div
+dataset = 'path'
+cvrtNames = 'Visit'
+randomName = 'Subject'
+
+mx4 = merge(mx2,dat_path[,-c(2:5)], by = 'barcode')
+path_scale = as.data.frame(scale(as.matrix(mx4[,50:351])))
+mx4[,-(1:49)]=path_scale
+na_flag <- apply(is.na(mx4),2,sum)
+mx4=mx4[,which(na_flag == 0)]
+
+
+dataName = sprintf('%s_vs_div',dataset)
+edataNames = colnames(mx4[,39:340])
+pairwise_association_test_lmm(mx4, cdataNames, edataNames, randomName, cvrtNames,dataName = dataName, dir_out = dir_out)
+
+##multiple test correction(fdr)
+filein_path = sprintf('%s/pval_path_vs_div.csv',dir_out)
+mx_pval = read.csv(filein_path)
+mx_qval = matrix(NA, 8, 302)
+colnames(mx_qval)=colnames(mx_pval[,2:303])
+rownames(mx_qval)=mx_pval[,1]
+for(i in 1:8){
+  mx_qval[i,] = p.adjust(mx_pval[i,2:303],method = 'BH')
+}
+fileout_path = sprintf('%s/qval_path_vs_div.csv',dir_out)
+write.csv(mx_qval,file = fileout_path,row.names = T)
+
+```
+
+
+### Summary -- Bile Acids/Trptophan of three visits as function of EC/KO/pathway predictions
+```{r echo=FALSE, message=FALSE, cache=FALSE, include=FALSE, results='hide', warnings=FALSE}
+dir1 = 'E:/Github/mbml/Scripts'
+dir2 = 'E:/Wanting/mbml/'
+
+
+#library(readxl)
+library(tidyr)
+library(stringr)
+library(knitr)
+library(dplyr)
+library("lme4")
+library(lmerTest)
+library(factoextra)
+
+library(magrittr)
+library(qwraps2)
+
+
+## read the data of Bile Acids, Trptophan and diversity
+setwd(dir1)
+source('data_analysis_MBML.R')
+dir_mb = '../processed_data'
+
+filein_ba = sprintf('%s/imputed_bilacid_log.csv',dir_mb)
+dat_ba = read.csv(filein_ba)
+filein_trp = sprintf('%s/mbml_trp.csv',dir_mb)
+dat_trp = read.csv(filein_trp)
+filein_div = sprintf('%s/qiime2_diversity.csv',dir_mb)
+dat_div = read.csv(filein_div)
+
+mx2 = merge(dat_trp[,c(1:5,35:47)],dat_ba,by=c('Subject','Visit'),sort = FALSE,all=TRUE)
+mx2 = merge(mx2,dat_div,by='barcode')
+
+## read the output from Picrust2
+setwd(dir2)
+dir_mb = './Data/processed_data'
+dir_raw = './Data/otus/qiime2/picrust2'
+dir_out = sprintf('%s/results/qiime2/PICRUSt2/significant',dir2)
+
+filein_EC = sprintf('%s/EC_predictions.csv',dir_mb)
+dat_EC = read.csv(filein_EC,header = T)
+filein_KO = sprintf('%s/KO_predictions.csv',dir_mb)
+dat_KO = read.csv(filein_KO,header = T)
+filein_path = sprintf('%s/path_predictions.csv',dir_mb)
+dat_path = read.csv(filein_path,header = T)
+
+
+
+
+
+
+cvrtNames = 'Visit'
+randomName = 'Subject'
+
+
+### EC vs Trp
+edataNames = 'Neopterin'
+dataset = 'Trp'
+cdataNames = c('EC.1.1.1.11','EC.1.1.1.122','EC.1.13.11.1','EC.1.13.11.3','EC.1.5.1.1','EC.3.1.27.3','EC.4.1.1.7','EC.4.1.1.87','EC.4.2.1.153','EC.4.2.1.25')
+
+
+mx4 = merge(mx2,dat_EC, by = 'barcode')
+id_rm = c(6,7)
+mx4 = mx4[!mx4$Subject %in% id_rm,]
+na_flag <- apply(is.na(mx4),2,sum)
+mx4=mx4[,which(na_flag == 0)]
+dataName = sprintf('%s_vs_EC',dataset)
+pairwise_association_test_lmm(mx4, cdataNames, edataNames, randomName, cvrtNames,dataName = dataName, dir_out = dir_out)
+
+###EC vs BA
+edataNames = c('TUDCA','GUDCA')
+dataset = 'BA'
+cdataNames = c('EC.1.1.1.103','EC.1.1.1.303','EC.1.1.1.336','EC.1.1.1.4','EC.1.1.1.47','EC.1.1.1.61','EC.1.1.1.67','EC.1.1.1.88','EC.1.1.1.9',
+               'EC.1.13.11.41','EC.1.5.1.28','EC.1.7.2.2','EC.2.7.1.146','EC.2.7.1.147','EC.2.7.8.20',
+               'EC.3.1.3.27','EC.3.1.6.1','EC.3.1.6.12','EC.3.1.6.6','EC.3.1.6.8','EC.3.2.1.130','EC.3.2.1.18',
+               'EC.4.2.1.42','EC.4.2.2.20','EC.4.2.2.21','EC.4.2.2.7','EC.4.2.2.8')
+
+
+mx4 = merge(mx2,dat_EC, by = 'barcode')
+na_flag <- apply(is.na(mx4),2,sum)
+mx4=mx4[,which(na_flag == 0)]
+dataName = sprintf('%s_vs_EC',dataset)
+pairwise_association_test_lmm(mx4, cdataNames, edataNames, randomName, cvrtNames,dataName = dataName, dir_out = dir_out)
+
+### path vs Trp
+edataNames = 'Neopterin'
+dataset = 'Trp'
+cdataNames = c('CATECHOL.ORTHO.CLEAVAGE.PWY','PROTOCATECHUATE.ORTHO.CLEAVAGE.PWY','PWY.5417','PWY.5431')
+
+mx4 = merge(mx2,dat_EC, by = 'barcode')
+id_rm = c(6,7)
+mx4 = mx4[!mx4$Subject %in% id_rm,]
+na_flag <- apply(is.na(mx4),2,sum)
+mx4=mx4[,which(na_flag == 0)]
+dataName = sprintf('%s_vs_path',dataset)
+pairwise_association_test_lmm(mx4, cdataNames, edataNames, randomName, cvrtNames,dataName = dataName, dir_out = dir_out)
+
+
+###path vs BA
+edataNames = c('TUDCA','GUDCA','CA')
+dataset = 'BA'
+cdataNames = c('P161.PWY','P163.PWY','P4.PWY','PWY.5686','PWY.6588','PWY.7210')
+
+mx4 = merge(mx2,dat_path, by = 'barcode')
+na_flag <- apply(is.na(mx4),2,sum)
+mx4=mx4[,which(na_flag == 0)]
+dataName = sprintf('%s_vs_path',dataset)
+pairwise_association_test_lmm(mx4, cdataNames, edataNames, randomName, cvrtNames,dataName = dataName, dir_out = dir_out)
+
+
+###div vs path
+edataNames = c('P161.PWY','HOMOSER.METSYN.PWY','PWY.5188','PWY.6471','MET.SAM.PWY','HEME.BIOSYNTHESIS.II','P4.PWY','PWY.5347','DAPLYSINESYN.PWY','PWY.5189','FAO.PWY')
+dataset = 'BA'
+cdataNames = c(paste("wunifrac.PC.",1:4,sep='')
+                  ,"pielou_e","observed_otus","faith_pd","shannon")
+
+mx4 = merge(mx2,dat_path, by = 'barcode')
+na_flag <- apply(is.na(mx4),2,sum)
+mx4=mx4[,which(na_flag == 0)]
+dataName = sprintf('%s_vs_path',dataset)
+pairwise_association_test_lmm(mx4, cdataNames, edataNames, randomName, cvrtNames,dataName = dataName, dir_out = dir_out)
+
+
+
+
+```
+
+### Bile Acids/Trptophan of three visits as function of log transformed EC/KO/pathway predictions(after QC)
+
+```{r echo=FALSE, message=FALSE, cache=FALSE, include=FALSE, results='hide', warnings=FALSE}
+dir1 = 'E:/Github/mbml/Scripts'
+dir2 = 'E:/Wanting/mbml/'
+
+
+#library(readxl)
+library(tidyr)
+library(stringr)
+library(knitr)
+library(dplyr)
+library("lme4") 
+library(lmerTest)
+library(factoextra)
+
+library(magrittr)
+library(qwraps2)
+
+
+## read the data of Bile Acids, Trptophan and diversity
+setwd(dir1)
+source('data_analysis_MBML.R')
+dir_mb = '../processed_data'
+
+filein_ba = sprintf('%s/imputed_bilacid_log.csv',dir_mb)
+dat_ba = read.csv(filein_ba)
+filein_trp = sprintf('%s/mbml_trp.csv',dir_mb)
+dat_trp = read.csv(filein_trp)
+filein_div = sprintf('%s/qiime2_diversity.csv',dir_mb)
+dat_div = read.csv(filein_div)
+
+mx2 = merge(dat_trp[,c(1:5,35:47)],dat_ba,by=c('Subject','Visit'),sort = FALSE,all=TRUE)
+#mx2 = merge(mx2,dat_div,by='barcode')
+
+## read the output from Picrust2
+setwd(dir2)
+dir_mb = './Data/processed_data'
+dir_raw = './Data/otus/qiime2/picrust2'
+dir_out = sprintf('%s/results/qiime2/PICRUSt2/log/new',dir2)
+
+filein_EC = sprintf('%s/EC_QC.csv',dir_mb)
+dat_EC = read.csv(filein_EC,header = T)
+filein_KO = sprintf('%s/KO_QC.csv',dir_mb)
+dat_KO = read.csv(filein_KO,header = T)
+filein_path = sprintf('%s/path_QC.csv',dir_mb)
+dat_path = read.csv(filein_path,header = T)
+
+
+
+cvrtNames = 'Visit'
+randomName = 'Subject'
+
+### EC vs BA
+edataNames = c('TUDCA','GUDCA','CA')
+
+dataset = 'BA'
+mx4 = merge(mx2,dat_EC[,-(2:5)], by = 'barcode')
+EC_log = as.data.frame(as.matrix(log(mx4[,50:594]+1)))
+mx4[,-(1:49)]=EC_log
+na_flag <- apply(is.na(mx4),2,sum)
+mx4=mx4[,which(na_flag == 0)]
+
+
+dataName = sprintf('%s_vs_log_EC',dataset)
+cdataNames = colnames(mx4[,39:583])
+pairwise_association_test_lmm(mx4, cdataNames, edataNames, randomName, cvrtNames,dataName = dataName, dir_out = dir_out)
+
+
+
+##path vs BA
+
+mx4 = merge(mx2,dat_path[,-c(2:5)], by = 'barcode')
+path_log = as.data.frame(as.matrix(log(mx4[,50:351]+1)))
+mx4[,-(1:49)]=path_log
+na_flag <- apply(is.na(mx4),2,sum)
+mx4=mx4[,which(na_flag == 0)]
+
+dataset = 'BA'
+dataName = sprintf('%s_vs_path_log',dataset)
+cdataNames = colnames(mx4[,c(39:340)])
+edataNames =  c('TaMCA','THCA','GHCA','TUDCA'
+               ,'GUDCA','GCA'
+               ,'CA','UDCA','TCDCA','GCDCA','TDCA'
+               ,'GDCA','CDCA','DCA','GLCA','bMCA')
+
+pairwise_association_test_lmm(mx4, cdataNames, edataNames, randomName, cvrtNames,dataName = dataName, dir_out = dir_out)
+
+###BA vs KO
+mx4 = merge(dat_trp,dat_KO, by = 'barcode')
+KO_scale = as.data.frame(scale(as.matrix(mx4[,52:2570])))
+mx4[,-(1:51)]=KO_scale
+na_flag <- apply(is.na(mx4),2,sum)
+mx4=mx4[,which(na_flag == 0)]
+
+dataset = 'BA'
+dataName = sprintf('%s_vs_KO',dataset)
+cdataNames = colnames(mx4[,37:2376])
+edataNames = c('TaMCA','THCA','GHCA','TUDCA'
+               ,'GUDCA','TCA','GCA'
+               ,'CA','UDCA','TCDCA','GCDCA','TDCA'
+               ,'GDCA','CDCA','DCA','GLCA','bMCA')
+pairwise_association_test_lmm(mx4, cdataNames, edataNames, randomName, cvrtNames,dataName = dataName, dir_out = dir_out)
+
+
+###Trp vs KO
+mx4 = merge(dat_trp,dat_KO, by = 'barcode')
+KO_scale = as.data.frame(scale(as.matrix(mx4[,52:2566])))
+mx4[,-(1:51)]=KO_scale
+na_flag <- apply(is.na(mx4),2,sum)
+mx4=mx4[,which(na_flag == 0)]
+
+dataset = 'BA'
+dataName = sprintf('%s_vs_KO',dataset)
+cdataNames = colnames(mx4[,37:2376])
+edataNames = c('TaMCA','THCA','GHCA','TUDCA'
+               ,'GUDCA','TCA','GCA'
+               ,'CA','UDCA','TCDCA','GCDCA','TDCA'
+               ,'GDCA','CDCA','DCA','GLCA','bMCA')
+pairwise_association_test_lmm(mx4, cdataNames, edataNames, randomName, cvrtNames,dataName = dataName, dir_out = dir_out)
+
+
+
+
+###Plots
+edataNames = c('P161.PWY','HOMOSER.METSYN.PWY','PWY.5188','PWY.6471','MET.SAM.PWY','HEME.BIOSYNTHESIS.II','P4.PWY','PWY.5347','DAPLYSINESYN.PWY','PWY.5189','FAO.PWY')
+
+#edataNames = 'Neopterin'
+cdataNames = 'wunifrac.PC.1'
+timeName = 'Visit'
+plot_longitudinal(mx4,cdataNames,edataNames, timeName,dataName = dataName, dir_out = dir_out)
+
+
+```
+
+
+
+
+## BH correction for cdata
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=2.5*4, fig.height=2.5*6}
+dir1 = 'E:/Github/mbml/Scripts'
+dir2 = 'E:/Wanting/mbml'
+
+setwd(dir1)
+
+
+library(knitr)
+library("lme4")
+library(lmerTest)
+#library(survival)
+#library(coxme)
+
+
+
+source('data_analysis_MBML.R')
+
+
+#dir_beha = 'behaviordata'
+dir_mb = '../processed_data'
+dir_raw = '../raw_data'
+dir_cvrt = sprintf('%s/cvrt',dir_raw)
+dir_out = sprintf('%s/results/qiime2/PICRUSt2',dir2)
+
+
+filein_KO = sprintf('%s/pval_KO_vs_div.csv',dir_out)
+mx_pval = read.csv(filein_KO,row.names = T)
+mx_qval = matrix(NA, 8, 2342)
+colnames(mx_qval)=colnames(mx_pval[,2:2343])
+rownames(mx_qval)=mx_pval[,1]
+for(i in 1:8){
+  mx_qval[i,] = p.adjust(mx_pval[i,2:2343],method = 'BH')
+}
+fileout_KO = sprintf('%s/qval_KO_vs_div.csv',dir_out)
+write.csv(mx_qval,file = fileout_KO,row.names = T)
+
+filein_EC = sprintf('%s/pval_EC_vs_div.csv',dir_out)
+mx_pval = read.csv(filein_EC)
+mx_qval = matrix(NA, 8, 649)
+colnames(mx_qval)=colnames(mx_pval[,2:650])
+rownames(mx_qval)=mx_pval[,1]
+for(i in 1:8){
+  mx_qval[i,] = p.adjust(mx_pval[i,2:650],method = 'BH')
+}
+fileout_EC = sprintf('%s/qval_EC_vs_div.csv',dir_out)
+write.csv(mx_qval,file = fileout_EC,row.names = T)
+
+
+
+filein_path = sprintf('%s/pval_path_vs_div.csv',dir_out)
+mx_pval = read.csv(filein_path)
+mx_qval = matrix(NA, 8, 251)
+colnames(mx_qval)=colnames(mx_pval[,2:252])
+rownames(mx_qval)=mx_pval[,1]
+for(i in 1:8){
+  mx_qval[i,] = p.adjust(mx_pval[i,2:252],method = 'BH')
+}
+fileout_path = sprintf('%s/qval_path_vs_div.csv',dir_out)
+write.csv(mx_qval,file = fileout_path,row.names = T)
+
+filein_path = sprintf('%s/pval_BA_vs_EC.csv',dir_out)
+mx_pval = read.csv(filein_path)
+mx_qval = matrix(NA, 660, 17)
+colnames(mx_qval)=colnames(mx_pval[,2:18])
+rownames(mx_qval)=mx_pval[,1]
+for(i in 1:17){
+  mx_qval[,i] = p.adjust(mx_pval[,i+1],method = 'BH')
+}
+fileout_path = sprintf('%s/qval_BA_vs_EC.csv',dir_out)
+write.csv(mx_qval,file = fileout_path,row.names = T)
+
+```
+
