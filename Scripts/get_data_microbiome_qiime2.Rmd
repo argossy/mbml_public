@@ -1,0 +1,494 @@
+---
+title: "get_data_microbiome_qiime2"
+author: "Wanting Jin"
+date: "6/3/2020"
+
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+# Outline of the analysis
+* PCA of alpha-diversity data from all three visits
+* linear mixed regression analysis between alpha-diversity and metabolites
+* Transform data by log to normalize the data
+* Boxplot and histogram to analyze the distribution and outliers
+* Summary statistics to summarize the data
+* Correlation heatmap between variables
+
+
+
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE}
+### load data file Microbiome diversity raw file
+dir1 = 'E:/Github/mbml'
+dir2 = 'E:/Wanting/mbml'
+setwd(dir2)
+
+library(knitr)
+library(ggplot2)
+library(reshape2)
+library(lme4)
+library(tidyr)
+library(stringr)
+library(dplyr)
+library(lmerTest)
+library(magrittr)
+library(qwraps2)
+
+#dir_beha = 'behaviordata'
+dir_mb = sprintf('%s/processed_data',dir1)
+dir_raw = './Data/otus/qiime2/QZA/exported_data'
+dir_out = sprintf('%s/results',dir2)
+
+
+beta=read.table(sprintf("%s/unweighted_unifrac_pcoa_mod_results.txt",dir_raw),header=FALSE)
+weight_beta=read.table(sprintf("%s/weighted_unifrac_pcoa_mod_results.txt",dir_raw),header=FALSE)
+
+weight_beta=weight_beta[,c(1:5)]
+colnames(weight_beta)=c("barcode","wunifrac.PC.1","wunifrac.PC.2","wunifrac.PC.3","wunifrac.PC.4")
+
+beta=beta[,c(1:5)]
+colnames(beta)=c("barcode","unifrac.PC.1","unifrac.PC.2","unifrac.PC.3","unifrac.PC.4")
+
+  #div_beta = merge(weight_beta,beta,by=1)
+  
+div_beta = weight_beta
+
+  #div_beta[,1]<-substr(div_beta[,1],0,5)
+  
+  
+  
+  ### alpha diversity
+  mx_alpha = c()
+  divNames = c('evenness','observed_otus','faith_pd','shannon')
+  
+  
+  filein_alpha1= sprintf("%s/evenness.tsv",dir_raw)
+  filein_alpha2= sprintf("%s/observed_otus.tsv",dir_raw)
+  filein_alpha3= sprintf("%s/faith_pd.tsv",dir_raw)
+  filein_alpha4= sprintf("%s/shannon.tsv",dir_raw)
+
+  evenness=read.table(filein_alpha1, header=TRUE, na.strings = "NA",fill=TRUE)
+  observed_otus=read.table(filein_alpha2, header=TRUE, na.strings = "NA",fill=TRUE)
+  faith_pd=read.table(filein_alpha3, header=TRUE, na.strings = "NA",fill=TRUE)
+  shannon=read.table(filein_alpha4, header=TRUE, na.strings = "NA",fill=TRUE)
+  
+  
+  mx2 = cbind(evenness, observed_otus, faith_pd, shannon)
+  barcode = rownames(mx2)
+  mx3 = data.frame(barcode, mx2)
+  
+  
+  ## merge alpha and beta diversity
+  mx_div = merge(div_beta, mx3, by = 1)
+  
+  
+  
+
+#  fileout_div_cvrt = sprintf('%s/qiime2_diversity.csv',dir_mb)
+#  write.csv(mx_div,fileout_div_cvrt,row.names = FALSE)
+
+
+```
+
+
+
+
+
+## PCA of alpha-diversity data from all three visits(plot by factoextra package)
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE}
+dir1 = 'E:/Github/mbml/Scripts'
+dir2 = 'E:/Wanting/mbml'
+setwd(dir1)
+library(knitr)
+library(ggplot2)
+library(reshape2)
+library(factoextra)
+#edataNames = c("chao1","observed_species","PD_whole_tree","shannon")
+
+pca_div <- princomp(mx3[,2:5],cor = T)#PCA of 4 alpha-diversity data by princomp function
+
+fviz_eig(pca_div,addlabels = T)#Screenplot by using factoextra package
+
+#Plot of accumulated percentage of explained variances
+pca_sum <- summary(pca_div,loadings = T)
+pca_sum$pva= pca_sum$sdev^2/sum(pca_sum$sdev^2)
+for(i in 1:4){
+  pca_sum$cpv[i] <- sum(pca_sum$pva[1:i])
+  pca_sum$comp[i] = i;
+}
+pca_var <- data.frame(PC = pca_sum$comp, pvar = pca_sum$pva, cpvar = pca_sum$cpv)
+screep <-ggplot(data = pca_var,aes(x = PC,y = cpvar))+
+  geom_point()+
+  geom_line()+
+  geom_line(y = 0.95,linetype = 2)+
+  geom_text(y = 0.96, x = 1,label = "0.95")+
+  ylim(0.5,1)+
+  labs(x= "PC", y = "Cumulative Percent of Variance")
+screep
+
+
+
+# Biplot
+#fviz_pca_biplot(pca_div,col.ind = dat_div$Visit, addEllipses = T, label = "var", col.var = "black", reoek = TRUE, legend.title = "Visit")
+
+#dat_div$Subject <- as.factor(dat_div$Subject)
+#fviz_pca_biplot(pca_div,col.ind = dat_div$Subject, addEllipses = F, label = "var", col.var = "black", reoek = TRUE, legend.title = "Subject")
+
+# Output the PCs of Alpha diversity
+
+adiv <- predict(pca_div)
+colnames(adiv) <- c("alphadiv.PC.1","alphadiv.PC.2","alphadiv.PC.3","alphadiv.PC.4")
+mx_div <- cbind(mx_div,adiv)
+fileout_div_cvrt = sprintf('%s/qiime2_diversity.csv',dir_mb)
+write.csv(mx_div,fileout_div_cvrt,row.names = FALSE)
+
+#fileout_data = sprintf('%s/mbml.csv',dir_mb)
+#write.csv(dat_div,fileout_data, row.names = FALSE)
+
+```
+
+\newpage
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.height = 8, fig.width = 6}
+#Plot of Loadings
+divNames = c('evenness','observed_otus','faith_pd','shannon')
+
+loadings <-cbind(divNames,melt(pca_div$loadings[,1:4]))
+barplot1 <- ggplot(data = loadings)+
+  geom_bar(aes(x = Var1, y = value),stat = "identity",width = 0.8)+
+  facet_grid(Var2~.)+
+  labs(title = "Loadings for PC1~PC4 of alpha-diversity", x = "alpha-diversity", y = "Loadings")+
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust = 0.5))
+print(barplot1)
+
+```
+
+
+
+### Bile Acids of three visits as function of beta and alpha diversity of microbiome
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=2.5*4, fig.height=2.5*6}
+
+dir1 = 'E:/Github/mbml/Scripts'
+dir2 = 'E:/Wanting/mbml'
+
+
+setwd(dir1)
+
+
+library(knitr)
+library("lme4")
+library(lmerTest)
+#library(survival)
+#library(coxme)
+source('data_analysis_MBML.R')
+
+
+
+
+
+#dir_beha = 'behaviordata'
+dir_mb = '../processed_data'
+dir_raw = '../raw_data'
+dir_cvrt = sprintf('%s/cvrt',dir_raw)
+dir_out = sprintf('%s/results/qiime2',dir2)
+
+filein_ba = sprintf('%s/imputed_bilacid_log.csv',dir_mb)
+dat_ba = read.csv(filein_ba)
+filein_trp = sprintf('%s/mbml_trp1.csv',dir_mb)
+dat_trp = read.csv(filein_trp)
+filein_div = sprintf('%s/qiime2_diversity.csv',dir_mb)
+dat_div = read.csv(filein_div)
+mx2 = merge(dat_trp[,c(1:5,44:51)],dat_ba,by=c('Subject','Visit'),sort = FALSE,all=TRUE)
+mx2 = merge(mx2,dat_div,by='barcode')
+
+
+
+edataNames = c('TaMCA','THCA','GHCA','TUDCA'
+               ,'GUDCA','TCA','GCA'
+               ,'CA','UDCA','TCDCA','GCDCA','TDCA'
+               ,'GDCA','CDCA','DCA','GLCA','bMCA')
+
+
+
+
+dataset = 'BA'
+
+
+
+
+
+
+cvrtNames = 'Visit'
+randomName = 'Subject'
+
+
+  
+  cdataNames = c(paste("wunifrac.PC.",1:4,sep='')
+                  ,"pielou_e","observed_otus","faith_pd","shannon")
+  
+
+  dataName = sprintf('%s_vs_div_q2',dataset)
+
+  
+  # Linear-mixed effect longitudinal model of random intercept and slope
+  pairwise_association_test_lmm(mx2, cdataNames, edataNames, randomName, cvrtNames,dataName = dataName, dir_out = dir_out)
+  
+
+
+```
+
+
+
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=3*4, fig.height=3*5}
+  
+  timeName = 'Visit'
+  
+  par(mfrow=c(5,4))
+  plot_longitudinal(mx2,cdataNames,edataNames, timeName,dataName = dataName, dir_out = dir_out)
+
+
+```
+
+
+
+
+### Change of Bile Acids of three visits as function of V1/V2 of beta and alpha diversity of microbiome
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=2.5*4, fig.height=2.5*6}
+
+setwd(dir1)
+library(lmerTest)
+
+source('data_analysis_MBML.R')
+
+
+#dir_beha = 'behaviordata'
+dir_mb = '../processed_data'
+dir_raw = '../raw_data'
+dir_cvrt = sprintf('%s/cvrt',dir_raw)
+dir_out = sprintf('%s/results/qiime2',dir2)
+
+filein_ba = sprintf('%s/imputed_bilacid_log.csv',dir_mb)
+dat_ba = read.csv(filein_ba)
+filein_trp = sprintf('%s/mbml_trp1.csv',dir_mb)
+dat_trp = read.csv(filein_trp)
+filein_div = sprintf('%s/qiime2_diversity.csv',dir_mb)
+dat_div = read.csv(filein_div)
+mx2 = merge(dat_trp[,c(1:5,44:51)],dat_ba,by=c('Subject','Visit'),sort = FALSE,all=TRUE)
+mx2 = merge(mx2,dat_div,by='barcode')
+
+
+edataNames = c('TaMCA','THCA','GHCA','TUDCA'
+               ,'GUDCA','TCA','GCA'
+               ,'CA','UDCA','TCDCA','GCDCA','TDCA'
+               ,'GDCA','CDCA','DCA','GLCA','bMCA')
+
+dataset = 'BA'
+
+cvrtNames = 'Visit'
+randomName = 'Subject'
+
+cdataNames = c(paste("wunifrac.PC.",1:4,sep='')
+                  ,"pielou_e","observed_otus","faith_pd","shannon")
+
+  library(reshape2)
+  #test1 = dcast(melt(mx2,id.vars=c('Subject','Visit')), Subject~variable+Visit)
+  
+  ## reshape the responses data to wide format
+  mx2_long = reshape(mx2, idvar='Subject', timevar = 'Visit', direction='wide')
+  
+  edataNames_diff21 = c()
+  edataNames_diff32 = c()
+  
+  # calculate the diff of Trp pathway variables
+  for(edataName in edataNames){
+    edataName_visits = paste(edataName,c('V1','V2','V3'),sep='.')
+    edataName_diff21 = paste(edataName,'V21',sep='.')
+    edataName_diff32 = paste(edataName,'V32',sep='.')
+    mx2_long[[edataName_diff21]] = mx2_long[, edataName_visits[2]] - mx2_long[, edataName_visits[1]]
+    mx2_long[[edataName_diff32]] = mx2_long[, edataName_visits[3]] - mx2_long[, edataName_visits[2]]
+    
+    edataNames_diff21 = c(edataNames_diff21, edataName_diff21)
+    edataNames_diff32 = c(edataNames_diff32, edataName_diff32)
+
+  }
+  
+  # association between div v1 and change of Trp
+  dataName = sprintf('%s_diff_vs_div_q2_v1',dataset)
+  cdataNames_v1 = paste(cdataNames, 'V1',sep='.')
+
+  pairwise_association_test(mx2_long, cdataNames_v1, c(edataNames_diff21, edataNames_diff32),dataName = dataName, dir_out = dir_out)
+  
+  
+    # association between div v2 and change of Trp
+  dataName = sprintf('%s_diff_vs_div_q2_v2',dataset)
+  cdataNames_v1 = paste(cdataNames, 'V2',sep='.')
+
+  pairwise_association_test(mx2_long, cdataNames_v1, c(edataNames_diff21, edataNames_diff32),dataName = dataName, dir_out = dir_out)
+
+```
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=3*4, fig.height=3*5}
+  
+  timeName = 'Visit'
+  
+  par(mfrow=c(5,4))
+  plot_longitudinal(mx2,cdataNames,edataNames, timeName,dataName = dataName, dir_out = dir_out)
+
+
+```
+
+
+
+
+### Tryptophan of three visits as function of beta and alpha diversity of microbiome
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=2.5*4, fig.height=2.5*6}
+
+dir1 = 'E:/Github/mbml/Scripts'
+dir2 = 'E:/Wanting/mbml'
+
+setwd(dir1)
+
+library(knitr)
+library("lme4")
+library(lmerTest)
+#library(survival)
+#library(coxme)
+
+source('data_analysis_MBML.R')
+
+
+#dir_beha = 'behaviordata'
+dir_mb = '../processed_data'
+dir_raw = '../raw_data'
+dir_cvrt = sprintf('%s/cvrt',dir_raw)
+dir_out = sprintf('%s/results/qiime2',dir2)
+#filein_trp = sprintf('%s/mbml_trp1.csv',dir_mb)
+#mx2 = read.csv(filein_trp)
+
+
+edataNames = c('Tryptophan','Kynurenine','Kynurenic.Acid','Neopterin','Serotonin', 'KYN_TRP_Ratio', 'KA_KYN_Ratio')
+dataset = 'Trp'
+cvrtNames = 'Visit'
+randomName = 'Subject'
+cdataNames = c(paste("wunifrac.PC.",1:4,sep='')
+                ,"pielou_e","observed_otus","faith_pd","shannon")
+dataName = sprintf('%s_vs_div_q2',dataset)
+
+pairwise_association_test_lmm(mx2, cdataNames, edataNames, randomName, cvrtNames,dataName = dataName, dir_out = dir_out)
+
+```
+
+
+
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=3*4, fig.height=3*5}
+  
+  timeName = 'Visit'
+  
+  par(mfrow=c(5,4))
+  plot_longitudinal(mx2,cdataNames,edataNames, timeName,dataName = dataName, dir_out = dir_out)
+
+
+```
+
+
+
+
+### Change of Tryptophan of three visits as function of V1/V2 of beta and alpha diversity of microbiome
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=2.5*4, fig.height=2.5*6}
+
+setwd(dir1)
+
+
+library(knitr)
+library("lme4")
+library(lmerTest)
+#library(survival)
+#library(coxme)
+
+
+
+source('data_analysis_MBML.R')
+
+
+#dir_beha = 'behaviordata'
+dir_mb = '../processed_data'
+dir_raw = '../raw_data'
+dir_cvrt = sprintf('%s/cvrt',dir_raw)
+dir_out = sprintf('%s/results/qiime2',dir2)
+
+
+#filein_trp = sprintf('%s/mbml_trp1.csv',dir_mb)
+#mx2 = read.csv(filein_trp)
+
+edataNames = c('Tryptophan','Kynurenine','Kynurenic.Acid','Neopterin','Serotonin', 'KYN_TRP_Ratio', 'KA_KYN_Ratio')
+dataset = 'Trp'
+cvrtNames = 'Visit'
+randomName = 'Subject'
+cdataNames = c(paste("wunifrac.PC.",1:4,sep='')
+                  ,"pielou_e","observed_otus","faith_pd","shannon")
+  
+
+  library(reshape2)
+  #test1 = dcast(melt(mx2,id.vars=c('Subject','Visit')), Subject~variable+Visit)
+  
+  ## reshape the responses data to wide format
+  mx2_long = reshape(mx2, idvar='Subject', timevar = 'Visit', direction='wide')
+  
+  edataNames_diff21 = c()
+  edataNames_diff32 = c()
+  
+  # calculate the diff of Trp pathway variables
+  for(edataName in edataNames){
+    edataName_visits = paste(edataName,c('V1','V2','V3'),sep='.')
+    edataName_diff21 = paste(edataName,'V21',sep='.')
+    edataName_diff32 = paste(edataName,'V32',sep='.')
+    mx2_long[[edataName_diff21]] = mx2_long[, edataName_visits[2]] - mx2_long[, edataName_visits[1]]
+    mx2_long[[edataName_diff32]] = mx2_long[, edataName_visits[3]] - mx2_long[, edataName_visits[2]]
+    
+    edataNames_diff21 = c(edataNames_diff21, edataName_diff21)
+    edataNames_diff32 = c(edataNames_diff32, edataName_diff32)
+
+  }
+  
+  # association between div v1 and change of Trp
+  dataName = sprintf('%s_diff_vs_div_q2_v1',dataset)
+  cdataNames_v1 = paste(cdataNames, 'V1',sep='.')
+
+  pairwise_association_test(mx2_long, cdataNames_v1, c(edataNames_diff21, edataNames_diff32),dataName = dataName, dir_out = dir_out)
+  
+  
+    # association between div v2 and change of Trp
+  dataName = sprintf('%s_diff_vs_div_q2_v2',dataset)
+  cdataNames_v1 = paste(cdataNames, 'V2',sep='.')
+
+  pairwise_association_test(mx2_long, cdataNames_v1, c(edataNames_diff21, edataNames_diff32),dataName = dataName, dir_out = dir_out)
+
+```
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=3*4, fig.height=3*5}
+  
+  timeName = 'Visit'
+  
+  par(mfrow=c(5,4))
+  plot_longitudinal(mx2,cdataNames,edataNames, timeName,dataName = dataName, dir_out = dir_out)
+
+
+```
+
+
+
+
