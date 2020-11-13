@@ -1,0 +1,795 @@
+---
+title: "Mother-baby microbiome longitudinal study"
+author:
+- Wanting Jin
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+
+
+# Outline of the analysis
+* Using quantile regression to impute missing value due to limit of detection
+* Delete HCA,MDCA, wMCA in bile acid because of high missing rate
+* Transform data by log to normalize the data
+* Boxplot and histogram to analyze the distribution and outliers
+* Summary statistics to summarize the data
+* Correlation heatmap between variables
+* Association analysis by linear mixed model between bile acids and tryptophan/diversity/mood/psychiatric history
+
+
+
+
+# Bile Acids analysis
+
+## Boxplot and histogram for Bile Acids after log transformation
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=3*3, fig.height=3*3}
+### summary stat analysis for the Bile Acids
+dir1 = 'E:/Github/mbml/Scripts'
+dir2 = 'E:/Wanting/mbml'
+setwd(dir1)
+
+library(knitr)
+library(ggplot2)
+library(reshape2)
+library(lme4)
+source('data_analysis_MBML.R')
+library(tidyr)
+library(stringr)
+library(dplyr)
+library(lmerTest)
+library(magrittr)
+library(qwraps2)
+
+#dir_beha = 'behaviordata'
+dir_mb = '../processed_data'
+dir_raw = '../raw_data'
+dir_cvrt = sprintf('%s/cvrt',dir_raw)
+dir_out = sprintf('%s/results/',dir2)
+
+
+filein_ba = sprintf('%s/imputed_bilacid_log.csv',dir_mb)
+dat_ba = read.csv(filein_ba)
+
+edataNames = c('TaMCA','THCA','GHCA','TUDCA'
+               ,'GUDCA','TCA','GCA'
+               ,'CA','UDCA','TCDCA','GCDCA','TDCA'
+               ,'GDCA','CDCA','DCA','GLCA','bMCA')
+
+
+par(mfrow=c(3,3))
+for(i in 1:length(edataNames)){
+  edataName = edataNames[i]
+  boxplot(dat_ba[,edataName], notch = FALSE, main=edataName, ylab=paste('ng/mL'))
+  #boxplot.with.outlier.label(dat_trp[,edataName],dat_trp$sampID)
+}
+
+```
+
+
+##box cox transformation for bile acids
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=3*3, fig.height=3*3}
+### summary stat analysis for the Bile Acids
+dir1 = 'E:/Github/mbml/Scripts'
+dir2 = 'E:/Wanting/mbml'
+setwd(dir1)
+library(MASS)
+
+
+filein_ba = sprintf('%s/imputed_bilacid.csv',dir_mb)
+dat_ba = read.csv(filein_ba)
+lambda = c()
+for(i in 1:17){
+  bc = boxcox(dat_ba[,i+2]~1,optimise = T)
+  lambda[i]=bc$x[which.max(bc$y)]
+
+}
+
+
+edataNames = c('TaMCA','THCA','GHCA','TUDCA'
+               ,'GUDCA','TCA','GCA'
+               ,'CA','UDCA','TCDCA','GCDCA','TDCA'
+               ,'GDCA','CDCA','DCA','GLCA','bMCA')
+
+
+```
+
+
+
+## Boxplot of Bile Acids after log transformation by visits
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=3*3, fig.height=3*3}
+
+par(mfrow=c(3,3))
+for(i in 1:length(edataNames)){
+  edataName = edataNames[i]
+  
+  fm1 = sprintf('%s ~ Visit',edataName)
+  fm1 = as.formula(fm1)
+  boxplot(fm1, data= dat_ba, notch = FALSE,  main=edataName, ylab=paste('ng/mL'))
+}
+
+```
+
+## Histogram of Bile Acids after log transformation
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=3*3, fig.height=3*3}
+
+par(mfrow=c(3,3))
+for(i in 1:length(edataNames)){
+  edataName = edataNames[i]
+  hist(dat_ba[,edataName], main=edataName, xlab=paste('ng/mL'),breaks=20)
+  #boxplot.with.outlier.label(dat_trp[,edataName],dat_trp$sampID)
+}
+
+
+```
+
+\newpage
+
+## Summary statistics for Bile Acids
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE}
+
+
+options(qwraps2_markup = "markdown")
+
+idx_stat = c(1,4,3)
+our_summary2 <-
+  with(dat_ba,
+       list('TaMCA' = tab_summary(TaMCA)[idx_stat],
+            'THCA' = tab_summary(THCA)[idx_stat],
+            'GHCA' = tab_summary(GHCA)[idx_stat],
+            'TUDCA' = tab_summary(TUDCA)[idx_stat],
+            'GUDCA' = tab_summary(GUDCA)[idx_stat], 
+            'TCA' = tab_summary(TCA)[idx_stat],
+            'GCA' = tab_summary(GCA)[idx_stat],
+            'CA' = tab_summary(CA)[idx_stat],
+            'UDCA' = tab_summary(UDCA)[idx_stat],
+            'TCDCA' = tab_summary(TCDCA)[idx_stat],
+            'GCDCA' = tab_summary(GCDCA)[idx_stat],
+            'TDCA' = tab_summary(TDCA)[idx_stat],
+            'GDCA' = tab_summary(GDCA)[idx_stat],
+            'CDCA' = tab_summary(CDCA)[idx_stat],
+            'DCA' = tab_summary(DCA)[idx_stat],
+            'GLCA' = tab_summary(GLCA)[idx_stat],
+            'bMCA' = tab_summary(bMCA)[idx_stat]
+           #                    "mean (95% CI)" = ~ frmtci(qwraps2::mean_ci(Kynurenine, na_rm=TRUE)))
+           # "Forward Gears" = tab_summary(as.character(gear))
+       ))
+            
+            
+whole <- summary_table(dat_ba, our_summary2)
+#print(kable(whole))
+
+grouped <- summary_table(dplyr::group_by(dat_ba, Visit), our_summary2)
+#grouped
+
+both = cbind(whole, grouped)
+colnames(both)[1] = 'All'
+print(both,rtitle='Bile Acids',font_size = 2,caption='Summary statistics for Bile Acids analysis')
+
+
+
+```
+
+\newpage
+
+
+## Outlier detection for Bile Acids
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE}
+### print the outlier subject, visit and values
+
+### remove extreme subject values for other pain ratings under flavor = 0 and nico = 0
+#painNames = c('THRES_COLD','TOLR_COLD','INTS_COLD','UNPLS_COLD','THRES_ISCH','TOLR_ISCH','INTS4_ISCH','UNPLS4_ISCH','MXNUM_ISCH')
+### the extreme outliers are defined as:
+# Extreme Outliers fall greater than 3.0*IQR outside the IQR and are plotted with a closed circle ['Tag'='OutliersX'].
+# For example, if the lower and upper ranges on the IQR are 4 and 6, the IQR=2.0 and values between 6+(1.5*2) and 6+(3*2) ( = 9 and 12) 
+# or between 4-(1.5*2) and 4-(3*2) ( = 1 and -2) are considered standard outliers. Samples above 12 or below -2 are considered extreme outliers.
+ 
+mx1 = dat_ba
+
+IQR_upper = rep(NA,length(edataNames))
+for(j in 1:length(edataNames)){
+	## I think we only need to worry about the upper extreme outlier in this study
+	y1 = mx1[,edataNames[j]]
+	IQR_upper[j] = quantile(y1, 3/4,na.rm=TRUE) + 3*IQR(y1, na.rm=TRUE)
+	#boxplot_list[[i]] = boxplot(dat1[dat1$flavor == 0 & dat1$nico == 0,painNames[j]])
+}
+
+
+mx_ot = c()
+#pain_rm = c()
+for(i in 1:dim(mx1)[1]){
+	for(j in 1:length(edataNames)){
+		#if(dat1$flavor[i] == 0 & dat1$nico[i] == 0){
+	  val = mx1[i,edataNames[j]]
+	  #print(paste(val,IQR_upper[j]))
+			if(!is.na(val) & val > IQR_upper[j]){
+				#dat1[i,painNames[j]] = 'NA'
+			  rowLine = c(mx1$Subject[i], mx1$Visit[i],edataNames[j],IQR_upper[j], val)
+			  
+				mx_ot = rbind(mx_ot, rowLine)
+				#sub_rm = c(sub_rm,mx1$SUBJECT[i])
+				#pain_rm = c(pain_rm,edataNames[j])
+				
+
+		  }
+		#}
+	}
+}
+
+colnames(mx_ot) = c('Subject','Visit','Measures','Upper range (Q3+3*IQR)','Value')
+
+kable(mx_ot,row.names=FALSE)
+
+
+
+
+```
+
+\newpage
+
+
+## Spaghetti plot for Bile Acids after log transformation
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=4*3, fig.height=4*3}
+#interaction.plot(dat_trp$Visit, dat_trp$Subject, dat_trp$Tryptophan)
+
+par(mfrow=c(3,3))
+for(i in 1:length(edataNames)){
+  edataName = edataNames[i]
+  
+  interaction.plot(dat_ba$Visit, dat_ba$Subject, dat_ba[,edataName], xlab="Visits", ylab='ng/mL', main=edataName, col=c(1:30), legend=F)
+}
+
+```
+
+
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE, fig.height=2*6, fig.width=2*5}
+#interaction.plot(dat_trp$Visit, dat_trp$Subject, dat_trp$Tryptophan)
+
+par(mfrow=c(6,5))
+
+for(i in 1:length(edataNames)){
+  edataName = edataNames[i]
+  ymax = max(dat_ba[,edataName],na.rm= TRUE)
+  for(id in sort(unique(dat_ba$Subject))){
+      dat1 = dat_ba[dat_ba$Subject == id,]
+      dat1$Visit = as.integer(gsub('V','',dat1$Visit))
+      plot(dat1$Visit, dat1[,edataName],xlab="Visits", ylab='ng/mL', main=paste(edataName,':','ID',id),type='l',ylim=c(0,ymax) )
+  }
+
+}
+```
+
+
+\newpage
+
+## Correlation of Bile Acids after log transformation
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE, fig.height=6, fig.width=2*5}
+
+library(ggplot2)
+library(reshape2)
+
+cormat = round(cor(dat_ba[,edataNames], use="pairwise.complete.obs"), 2)
+
+
+melted_cormat <- melt(cormat)
+#head(melted_cormat)
+
+
+
+# Get lower triangle of the correlation matrix
+  get_lower_tri<-function(cormat){
+    cormat[upper.tri(cormat)] <- NA
+    return(cormat)
+  }
+  # Get upper triangle of the correlation matrix
+  get_upper_tri <- function(cormat){
+    cormat[lower.tri(cormat)]<- NA
+    return(cormat)
+  }
+  
+upper_tri <- get_upper_tri(cormat)
+
+
+reorder_cormat <- function(cormat){
+# Use correlation between variables as distance
+dd <- as.dist((1-cormat)/2)
+hc <- hclust(dd)
+cormat <-cormat[hc$order, hc$order]
+}
+
+#Reorder the correlation matrix
+cormat <- reorder_cormat(cormat)
+upper_tri <- get_upper_tri(cormat)
+# Melt the correlation matrix
+melted_cormat <- melt(upper_tri, na.rm = TRUE)
+# Create a ggheatmap
+ggheatmap <- ggplot(melted_cormat, aes(Var2, Var1, fill = value))+
+ geom_tile(color = "white")+
+ scale_fill_gradient2(low = "blue", high = "red", mid = "white",
+   midpoint = 0, limit = c(-1,1), space = "Lab",
+    name="Pearson\nCorrelation") +
+  theme_minimal()+ # minimal theme
+ theme(axis.text.x = element_text(angle = 45, vjust = 1,
+    size = 12, hjust = 1))+
+ coord_fixed()
+# Print the heatmap
+#print(ggheatmap)
+
+
+ggheatmap + 
+geom_text(aes(Var2, Var1, label = value), color = "black", size = 4) +
+theme(
+  axis.title.x = element_blank(),
+  axis.title.y = element_blank(),
+  panel.grid.major = element_blank(),
+  panel.border = element_blank(),
+  panel.background = element_blank(),
+  axis.ticks = element_blank(),
+  legend.justification = c(1, 0),
+  legend.position = c(0.6, 0.7),
+  legend.direction = "horizontal")+
+  guides(fill = guide_colorbar(barwidth = 7, barheight = 1,
+                title.position = "top", title.hjust = 0.5))
+
+
+
+```
+
+
+\newpage
+
+## Association analysis for Bile Acids
+
+### Bile Acids of three visits as function of beta and alpha diversity of microbiome
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=2.5*4, fig.height=2.5*6}
+
+dir1 = 'E:/Github/mbml/Scripts'
+dir2 = 'E:/Wanting/mbml'
+
+
+setwd(dir1)
+
+
+library(knitr)
+library("lme4")
+library(lmerTest)
+#library(survival)
+#library(coxme)
+source('data_analysis_MBML.R')
+
+
+
+
+
+#dir_beha = 'behaviordata'
+dir_mb = '../processed_data'
+dir_raw = '../raw_data'
+dir_cvrt = sprintf('%s/cvrt',dir_raw)
+dir_out = sprintf('%s/results',dir2)
+
+filein_ba = sprintf('%s/imputed_bilacid_log.csv',dir_mb)
+dat_ba = read.csv(filein_ba)
+
+filein_trp = sprintf('%s/mbml_trp.csv',dir_mb)
+dat_trp = read.csv(filein_trp)
+mx2 = merge(dat_trp[,c(1:5,26:47)],dat_ba,by=c('Subject','Visit'),sort = FALSE,all=TRUE)
+
+
+edataNames = c('TaMCA','THCA','GHCA','TUDCA'
+               ,'GUDCA','TCA','GCA'
+               ,'CA','UDCA','TCDCA','GCDCA','TDCA'
+               ,'GDCA','CDCA','DCA','GLCA','bMCA')
+
+
+
+
+dataset = 'BA'
+
+
+
+
+
+
+cvrtNames = 'Visit'
+randomName = 'Subject'
+
+
+  
+  cdataNames = c(paste("wunifrac.PC.",1:4,sep='')
+                  ,"chao1","observed_species","PD_whole_tree","shannon")
+  
+
+  dataName = sprintf('%s_vs_div',dataset)
+
+  
+  # Linear-mixed effect longitudinal model of random intercept and slope
+  pairwise_association_test_lmm(mx2, cdataNames, edataNames, randomName, cvrtNames,dataName = dataName, dir_out = dir_out)
+  
+
+
+```
+
+
+
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=3*4, fig.height=3*5}
+  
+  timeName = 'Visit'
+  
+  par(mfrow=c(5,4))
+  plot_longitudinal(mx2,cdataNames,edataNames, timeName,dataName = dataName, dir_out = dir_out)
+
+
+```
+
+
+
+
+### Change of Tryptophan of three visits as function of V1/V2 of beta and alpha diversity of microbiome
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=2.5*4, fig.height=2.5*6}
+
+setwd(dir1)
+library(lmerTest)
+
+source('data_analysis_MBML.R')
+
+
+#dir_beha = 'behaviordata'
+dir_mb = '../processed_data'
+dir_raw = '../raw_data'
+dir_cvrt = sprintf('%s/cvrt',dir_raw)
+dir_out = sprintf('%s/results',dir2)
+
+filein_ba = sprintf('%s/imputed_bilacid_log.csv',dir_mb)
+dat_ba = read.csv(filein_ba)
+
+filein_trp = sprintf('%s/mbml_trp1.csv',dir_mb)
+dat_trp = read.csv(filein_trp)
+mx2 = merge(dat_trp[,c(1:5,26:47)],dat_ba,by=c('Subject','Visit'),sort = FALSE,all=TRUE)
+
+
+edataNames = c('TaMCA','THCA','GHCA','TUDCA'
+               ,'GUDCA','TCA','GCA'
+               ,'CA','UDCA','TCDCA','GCDCA','TDCA'
+               ,'GDCA','CDCA','DCA','GLCA','bMCA')
+
+
+
+
+dataset = 'BA'
+
+
+
+
+
+
+cvrtNames = 'Visit'
+randomName = 'Subject'
+
+
+  
+  cdataNames = c(paste("wunifrac.PC.",1:4,sep='')
+                  ,"alphadiv.PC.1","alphadiv.PC.2")
+  
+  
+  
+  
+  library(reshape2)
+  #test1 = dcast(melt(mx2,id.vars=c('Subject','Visit')), Subject~variable+Visit)
+  
+  ## reshape the responses data to wide format
+  mx2_long = reshape(mx2, idvar='Subject', timevar = 'Visit', direction='wide')
+  
+  edataNames_diff21 = c()
+  edataNames_diff32 = c()
+  
+  # calculate the diff of Trp pathway variables
+  for(edataName in edataNames){
+    edataName_visits = paste(edataName,c('V1','V2','V3'),sep='.')
+    edataName_diff21 = paste(edataName,'V21',sep='.')
+    edataName_diff32 = paste(edataName,'V32',sep='.')
+    mx2_long[[edataName_diff21]] = mx2_long[, edataName_visits[2]] - mx2_long[, edataName_visits[1]]
+    mx2_long[[edataName_diff32]] = mx2_long[, edataName_visits[3]] - mx2_long[, edataName_visits[2]]
+    
+    edataNames_diff21 = c(edataNames_diff21, edataName_diff21)
+    edataNames_diff32 = c(edataNames_diff32, edataName_diff32)
+
+  }
+  
+  # association between div v1 and change of Trp
+  dataName = sprintf('%s_diff_vs_div_v1',dataset)
+  cdataNames_v1 = paste(cdataNames, 'V1',sep='.')
+
+  pairwise_association_test(mx2_long, cdataNames_v1, c(edataNames_diff21, edataNames_diff32),dataName = dataName, dir_out = dir_out)
+  
+  
+    # association between div v2 and change of Trp
+  dataName = sprintf('%s_diff_vs_div_v2',dataset)
+  cdataNames_v1 = paste(cdataNames, 'V2',sep='.')
+
+  pairwise_association_test(mx2_long, cdataNames_v1, c(edataNames_diff21, edataNames_diff32),dataName = dataName, dir_out = dir_out)
+
+```
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=3*4, fig.height=3*5}
+  
+  timeName = 'Visit'
+  
+  par(mfrow=c(5,4))
+  plot_longitudinal(mx2,cdataNames,edataNames, timeName,dataName = dataName, dir_out = dir_out)
+
+
+```
+
+
+
+\newpage
+
+### Mood assessment as function of Bile Acids
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=3*4, fig.height=3*6}
+
+
+
+setwd(dir1)
+
+
+library(knitr)
+library("lme4")
+library(lmerTest)
+#library(survival)
+#library(coxme)
+
+
+
+source('data_analysis_MBML.R')
+
+
+#dir_beha = 'behaviordata'
+dir_mb = '../processed_data'
+dir_raw = '../raw_data'
+dir_cvrt = sprintf('%s/cvrt',dir_raw)
+dir_out = sprintf('%s/results',dir2)
+
+filein_ba = sprintf('%s/imputed_bilacid_log.csv',dir_mb)
+dat_ba = read.csv(filein_ba)
+
+filein_trp = sprintf('%s/mbml_trp1.csv',dir_mb)
+dat_trp = read.csv(filein_trp)
+mx2 = merge(dat_trp[,c(1:5,26:47)],dat_ba,by=c('Subject','Visit'),sort = FALSE,all=TRUE)
+
+  
+
+cdataNames = c('TaMCA','THCA','GHCA','TUDCA'
+               ,'GUDCA','TCA','GCA'
+               ,'CA','UDCA','TCDCA','GCDCA','TDCA'
+               ,'GDCA','CDCA','DCA','GLCA','bMCA')
+  
+edataNames = c('GAD','EPSD')
+
+dataset = 'Mood'
+
+
+
+
+
+
+cvrtNames = 'Visit'
+randomName = 'Subject'
+
+
+  
+
+  dataName = sprintf('%s_vs_ba',dataset)
+
+  pairwise_association_test_lmm(mx2, cdataNames, edataNames, randomName, cvrtNames,dataName = dataName, dir_out = dir_out)
+  
+```
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=3*4, fig.height=3*5}
+
+  timeName = 'Visit'
+  
+  par(mfrow=c(5,4))
+  plot_longitudinal(mx2,cdataNames,edataNames, timeName,dataName = dataName, dir_out = dir_out)
+
+
+```
+
+
+
+
+
+
+### Change of mood of three visits as function of V1/V2 of Bile Acids
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=2.5*4, fig.height=2.5*6}
+
+
+
+setwd(dir1)
+
+
+library(knitr)
+library("lme4")
+#library(survival)
+#library(coxme)
+
+
+
+source('data_analysis_MBML.R')
+
+
+#dir_beha = 'behaviordata'
+dir_mb = '../processed_data'
+dir_raw = '../raw_data'
+dir_cvrt = sprintf('%s/cvrt',dir_raw)
+dir_out = sprintf('%s/results',dir2)
+
+filein_ba = sprintf('%s/imputed_bilacid_log.csv',dir_mb)
+dat_ba = read.csv(filein_ba)
+
+filein_trp = sprintf('%s/mbml_trp1.csv',dir_mb)
+dat_trp = read.csv(filein_trp)
+mx2 = merge(dat_trp[,c(1:5,26:47)],dat_ba,by=c('Subject','Visit'),sort = FALSE,all=TRUE)
+
+
+edataNames = c('GAD','EPSD')
+cdataNames = c('TaMCA','THCA','GHCA','TUDCA'
+               ,'GUDCA','TCA','GCA'
+               ,'CA','UDCA','TCDCA','GCDCA','TDCA'
+               ,'GDCA','CDCA','DCA','GLCA','bMCA')
+  
+
+
+
+
+dataset = 'mood'
+
+
+
+
+
+
+cvrtNames = 'Visit'
+randomName = 'Subject'
+
+
+  
+
+  
+  library(reshape2)
+  #test1 = dcast(melt(mx2,id.vars=c('Subject','Visit')), Subject~variable+Visit)
+  
+  ## reshape the responses data to wide format
+  mx2_long = reshape(mx2, idvar='Subject', timevar = 'Visit', direction='wide')
+  
+  edataNames_diff21 = c()
+  edataNames_diff32 = c()
+  
+  # calculate the diff of Trp pathway variables
+  for(edataName in edataNames){
+    edataName_visits = paste(edataName,c('V1','V2','V3'),sep='.')
+    edataName_diff21 = paste(edataName,'V21',sep='.')
+    edataName_diff32 = paste(edataName,'V32',sep='.')
+    mx2_long[[edataName_diff21]] = mx2_long[, edataName_visits[2]] - mx2_long[, edataName_visits[1]]
+    mx2_long[[edataName_diff32]] = mx2_long[, edataName_visits[3]] - mx2_long[, edataName_visits[2]]
+    
+    edataNames_diff21 = c(edataNames_diff21, edataName_diff21)
+    edataNames_diff32 = c(edataNames_diff32, edataName_diff32)
+
+  }
+  
+  # association between div v1 and change of Trp
+  dataName = sprintf('%s_diff_vs_ba_v1',dataset)
+  cdataNames_v1 = paste(cdataNames, 'V1',sep='.')
+
+  pairwise_association_test(mx2_long, cdataNames_v1, c(edataNames_diff21, edataNames_diff32),dataName = dataName, dir_out = dir_out)
+  
+  
+    # association between div v2 and change of Trp
+  dataName = sprintf('%s_diff_vs_ba_v2',dataset)
+  cdataNames_v1 = paste(cdataNames, 'V2',sep='.')
+
+  pairwise_association_test(mx2_long, cdataNames_v1, c(edataNames_diff21, edataNames_diff32),dataName = dataName, dir_out = dir_out)
+
+```
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=3*4, fig.height=3*5}
+  
+  timeName = 'Visit'
+  
+  par(mfrow=c(5,4))
+  plot_longitudinal(mx2,cdataNames,edataNames, timeName,dataName = dataName, dir_out = dir_out)
+
+
+```
+
+
+
+
+### Tryptophan/Bile Acids of three visits as function of Psychiatric history
+
+```{r echo=FALSE,results='asis',include=TRUE, cache=FALSE,message=FALSE,warnings=FALSE,fig.width=2.5*4, fig.height=2.5*6}
+
+dir1 = 'E:/Github/mbml/Scripts'
+dir2 = 'E:/Wanting/mbml'
+
+setwd(dir1)
+
+library(knitr)
+library("lme4")
+library(lmerTest)
+#library(survival)
+#library(coxme)
+
+source('data_analysis_MBML.R')
+
+
+#dir_beha = 'behaviordata'
+dir_mb = '../processed_data'
+dir_raw = '../raw_data'
+dir_cvrt = sprintf('%s/cvrt',dir_raw)
+dir_out = sprintf('%s/results',dir2)
+
+filein_ba = sprintf('%s/imputed_bilacid_log.csv',dir_mb)
+dat_ba = read.csv(filein_ba)
+filein_trp = sprintf('%s/mbml_trp1.csv',dir_mb)
+dat_trp = read.csv(filein_trp)
+filein_div = sprintf('%s/qiime2_diversity.csv',dir_mb)
+dat_div = read.csv(filein_div)
+mx2 = merge(dat_trp[,c(1:5,44:51)],dat_ba,by=c('Subject','Visit'),sort = FALSE,all=TRUE)
+mx2 = merge(mx2,dat_div,by='barcode')
+
+
+filein_MPPD = sprintf('%s/MPPD_Data_Master_09-13-2020.csv',dir_mb)
+MPPD = read.csv(filein_MPPD)
+history = MPPD[,c(1,21:22,24,28,31:34)]
+
+mx3 = merge(mx2,history,by.x = 'subjectID',by.y = 'SUBJID')
+#cdataNames = c(paste("wunifrac.PC.",1:4,sep='')
+#                ,"pielou_e","observed_otus","faith_pd","shannon")
+cdataNames = colnames(history[,3:9])
+
+edataNames = c('Tryptophan','Kynurenine','Kynurenic.Acid','Neopterin','Serotonin', 'KYN_TRP_Ratio', 'KA_KYN_Ratio')
+dataset = 'Trp'
+cvrtNames = 'Visit'
+randomName = 'Subject'
+dataName = sprintf('%s_vs_his',dataset)
+pairwise_association_test_lmm(mx3, cdataNames, edataNames, randomName, cvrtNames,dataName = dataName, dir_out = dir_out)
+
+
+edataNames = c('TaMCA','THCA','GHCA','TUDCA'
+               ,'GUDCA','TCA','GCA'
+               ,'CA','UDCA','TCDCA','GCDCA','TDCA'
+               ,'GDCA','CDCA','DCA','GLCA','bMCA')
+dataset = 'BA'
+dataName = sprintf('%s_vs_his',dataset)
+pairwise_association_test_lmm(mx3, cdataNames, edataNames, randomName, cvrtNames,dataName = dataName, dir_out = dir_out)
+
+
+edataNames = c(paste("wunifrac.PC.",1:4,sep='')
+               ,"pielou_e","observed_otus","faith_pd","shannon")
+dataset = 'div'
+dataName = sprintf('%s_vs_his',dataset)
+pairwise_association_test_lmm(mx3, cdataNames, edataNames, randomName, cvrtNames,dataName = dataName, dir_out = dir_out)
+
+```
+
