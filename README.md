@@ -6,7 +6,7 @@
 
 
 
-#### Figure availability
+#### Figures
 ``` js
 get_plot_microbiome.Rmd
 ```
