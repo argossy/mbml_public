@@ -38,6 +38,8 @@ get_analysis_picrust2.Rmd
 
 
 ### Reference
+[Metabolite trajectories across the perinatal period and mental health: A preliminary study of tryptophan-related metabolites, bile acids and microbial composition
+M Kimmel, W Jin, K Xia, K Lun, A Azcarate-Peril. - Behavioural Brain Research, 2022](https://https://www.sciencedirect.com/science/article/abs/pii/S0166432821005234)
 
 
 ### Contact
